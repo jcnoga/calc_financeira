@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calculadora Financeira para PMEs</title>
     
-    <!-- FIREBASE SDKs (Adicionado) -->
+    <!-- FIREBASE SDKs (Atualizado com Firestore) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script> <!-- Adicionado Firestore -->
 
     <!-- CSS Integrado -->
     <style>
@@ -1204,7 +1205,7 @@
 
     <!-- JavaScript Integrado -->
     <script>
-        // CONFIGURAÇÃO FIREBASE (Adicionado)
+        // CONFIGURAÇÃO FIREBASE (Atualizado com Firestore)
         const firebaseConfig = {
           apiKey: "AIzaSyDWwDLl34BLd1mYLSniJ8ucDTeaj4IX_2s",
           authDomain: "calc-financeira.firebaseapp.com",
@@ -1216,10 +1217,11 @@
         };
 
         // Inicializa Firebase (Se disponível)
-        let auth, googleProvider;
+        let auth, googleProvider, db;
         try {
             firebase.initializeApp(firebaseConfig);
             auth = firebase.auth();
+            db = firebase.firestore(); // Inicializa Firestore
             googleProvider = new firebase.auth.GoogleAuthProvider();
         } catch (e) {
             console.error("Erro ao inicializar Firebase", e);
@@ -1268,9 +1270,9 @@
             let autoSaveTimer = null;
             let isSaving = false;
             
-            // Funções do Sistema de Recuperação e Autosalvamento
+            // Funções do Sistema de Recuperação e Autosalvamento (Atualizado para Cloud + Local)
             function initializeAutoSave() {
-                // Carrega dados salvos automaticamente
+                // Carrega dados salvos automaticamente (verifica nuvem e local)
                 loadAutoSavedData();
                 
                 // Configura o salvamento automático periódico
@@ -1300,6 +1302,7 @@
                 });
             }
             
+            // Salva dados no Local Storage E na Nuvem
             function saveAutoData() {
                 if (isSaving) return;
                 
@@ -1314,9 +1317,22 @@
                         userId: getCurrentUserId()
                     };
                     
+                    // 1. Salvar Localmente (Mantido)
                     localStorage.setItem(AUTO_SAVE_KEY, JSON.stringify(saveData));
                     localStorage.setItem(LAST_SESSION_KEY, new Date().toISOString());
                     
+                    // 2. Salvar na Nuvem (Novo)
+                    if (auth && auth.currentUser) {
+                        db.collection('users').doc(auth.currentUser.uid).set({
+                            financialData: inputs,
+                            lastModified: firebase.firestore.FieldValue.serverTimestamp()
+                        }, { merge: true }).then(() => {
+                            console.log("Dados sincronizados com a nuvem.");
+                        }).catch((error) => {
+                            console.error("Erro ao salvar na nuvem:", error);
+                        });
+                    }
+
                     setTimeout(() => {
                         isSaving = false;
                         updateAutoSaveStatus('saved');
@@ -1331,24 +1347,55 @@
                 }
             }
             
+            // Carrega dados. Prioriza Cloud no login inicial.
             function loadAutoSavedData() {
                 try {
-                    const savedData = localStorage.getItem(AUTO_SAVE_KEY);
-                    const lastSession = localStorage.getItem(LAST_SESSION_KEY);
-                    
-                    if (savedData && lastSession) {
-                        const data = JSON.parse(savedData);
-                        const lastSessionDate = new Date(lastSession);
-                        const now = new Date();
-                        const hoursDiff = Math.abs(now - lastSessionDate) / 36e5; // Diferença em horas
-                        
-                        // Só mostra a notificação se os dados foram salvados há menos de 24 horas
-                        if (hoursDiff < 24 && data.userId === getCurrentUserId()) {
-                            showRecoveryNotice(data.data);
-                        }
+                    // Se estiver logado, tenta pegar da nuvem primeiro
+                    if (auth && auth.currentUser) {
+                        db.collection('users').doc(auth.currentUser.uid).get().then((doc) => {
+                            if (doc.exists) {
+                                const userData = doc.data();
+                                
+                                // Sync de Licença (Nuvem -> Local)
+                                if (userData.license) {
+                                    localStorage.setItem('pme_calculator_license', JSON.stringify(userData.license));
+                                    checkLicenseExpiry(); // Revalida visualmente
+                                }
+
+                                // Sync de Dados Financeiros
+                                if (userData.financialData && Object.keys(userData.financialData).length > 0) {
+                                    restoreAutoSavedData(userData.financialData, false); // Restaura silenciosamente
+                                    console.log("Dados carregados da nuvem.");
+                                    return; // Se achou na nuvem, não precisa olhar local storage agora
+                                }
+                            }
+                            // Fallback para local se nuvem estiver vazia
+                            checkLocalData();
+                        }).catch((err) => {
+                            console.error("Erro ao buscar dados na nuvem:", err);
+                            checkLocalData();
+                        });
+                    } else {
+                        checkLocalData();
                     }
                 } catch (error) {
                     console.error('Erro ao carregar dados salvos:', error);
+                }
+            }
+
+            function checkLocalData() {
+                const savedData = localStorage.getItem(AUTO_SAVE_KEY);
+                const lastSession = localStorage.getItem(LAST_SESSION_KEY);
+                
+                if (savedData && lastSession) {
+                    const data = JSON.parse(savedData);
+                    const lastSessionDate = new Date(lastSession);
+                    const now = new Date();
+                    const hoursDiff = Math.abs(now - lastSessionDate) / 36e5; 
+                    
+                    if (hoursDiff < 24 && data.userId === getCurrentUserId()) {
+                        showRecoveryNotice(data.data);
+                    }
                 }
             }
             
@@ -1358,7 +1405,7 @@
                 
                 recoveryNotice.addEventListener('click', (e) => {
                     if (e.target !== closeRecoveryNotice) {
-                        restoreAutoSavedData(data);
+                        restoreAutoSavedData(data, true);
                         recoveryNotice.classList.add('hidden');
                     }
                 });
@@ -1369,15 +1416,17 @@
                 });
             }
             
-            function restoreAutoSavedData(data) {
-                if (confirm('Deseja restaurar os dados da sua última sessão?')) {
+            function restoreAutoSavedData(data, confirmAction = true) {
+                if (!confirmAction || confirm('Deseja restaurar os dados da sua última sessão?')) {
                     for (const [key, value] of Object.entries(data)) {
                         const input = document.getElementById(key);
                         if (input) {
                             input.value = value;
                         }
                     }
-                    alert('Dados restaurados com sucesso!');
+                    if (confirmAction) alert('Dados restaurados com sucesso!');
+                    // Atualiza UI de erro se houver
+                    validateForm();
                 }
             }
             
@@ -1387,10 +1436,10 @@
                 
                 switch(status) {
                     case 'saving':
-                        saveStatusText.textContent = 'Salvando...';
+                        saveStatusText.textContent = 'Salvando na nuvem...';
                         break;
                     case 'saved':
-                        saveStatusText.textContent = 'Salvo automaticamente';
+                        saveStatusText.textContent = 'Salvo e sincronizado';
                         break;
                     case 'error':
                         saveStatusText.textContent = 'Erro ao salvar';
@@ -1401,6 +1450,7 @@
             }
             
             function getCurrentUserId() {
+                if (auth && auth.currentUser) return auth.currentUser.email;
                 const loggedUser = sessionStorage.getItem('pme_logged_user');
                 if (loggedUser) {
                     const user = JSON.parse(loggedUser);
@@ -1409,21 +1459,18 @@
                 return 'anonymous';
             }
             
-            // Função para criar licença trial automática
-            function createTrialLicense(days = 30) {
+            // Função para criar licença trial (Estrutura de dados)
+            function getTrialLicenseData(days = 30) {
                 const trialExpiryDate = new Date();
                 trialExpiryDate.setDate(trialExpiryDate.getDate() + days);
                 
-                const trialLicenseData = {
+                return {
                     license: 'TRIAL-' + Math.random().toString(36).substr(2, 9),
                     activationDate: new Date().toISOString(),
                     expiryDate: trialExpiryDate.toISOString(),
                     days: days,
                     isTrial: true
                 };
-                
-                localStorage.setItem('pme_calculator_license', JSON.stringify(trialLicenseData));
-                return trialLicenseData;
             }
             
             // Funções do Sistema de Licença
@@ -1496,7 +1543,8 @@
             
             function showLicenseExpiredMessage() {
                 // Mostra uma mensagem de alerta quando a licença expira
-                alert('Sua licença expirou! Por favor, renove sua licença para continuar usando o aplicativo.');
+                // alert('Sua licença expirou! Por favor, renove sua licença para continuar usando o aplicativo.');
+                // Comentado para não spammar alertas no load
                 
                 // Garante que o botão calcular está escondido
                 btnCalculate.classList.add('btn-calculate-hidden');
@@ -1561,7 +1609,15 @@
                     isTrial: false
                 };
                 
+                // Salva local
                 localStorage.setItem('pme_calculator_license', JSON.stringify(licenseData));
+                
+                // Salva na Nuvem (Sync)
+                if (auth && auth.currentUser) {
+                    db.collection('users').doc(auth.currentUser.uid).set({
+                        license: licenseData
+                    }, { merge: true });
+                }
                 
                 // Mostra informações da licença
                 licenseInfo.classList.remove('hidden');
@@ -1637,33 +1693,33 @@
             document.getElementById('btn-do-login').addEventListener('click', handleLogin);
             document.getElementById('btn-do-register').addEventListener('click', handleRegister);
             document.getElementById('btn-do-forgot').addEventListener('click', handleForgotPass);
-            // Botão Google (Novo)
+            // Botão Google
             document.getElementById('btn-google-login').addEventListener('click', handleGoogleLogin);
             
             btnLogout.addEventListener('click', handleLogout);
 
             // Verificar sessão existente (Local)
-            checkSession();
+            // checkSession(); // Removido para usar a lógica do Firebase como prioritária
 
             // Listener de estado do Firebase (Nova funcionalidade de robustez)
             if (auth) {
                 auth.onAuthStateChanged(function(user) {
                     if (user) {
                         // Se usuário logado no Firebase, mostra o app
-                        // Mapeia usuário do Firebase para o formato do app
                         const appUser = {
                             name: user.displayName || user.email.split('@')[0],
                             email: user.email,
-                            pass: 'google-auth'
+                            pass: 'firebase-auth'
                         };
+                        
+                        // Garante que o sessionStorage esteja alinhado para a UI antiga funcionar
+                        sessionStorage.setItem('pme_logged_user', JSON.stringify(appUser));
+                        
                         showApp(appUser);
                     } else {
-                        // Se não houver usuário Firebase, verifica sessão local
-                        // Se não houver sessão local, mantém na tela de login (comportamento padrão)
-                        const loggedUser = sessionStorage.getItem('pme_logged_user');
-                        if (!loggedUser) {
-                            showAuth();
-                        }
+                        // Se não houver usuário Firebase, mantem na tela de login
+                        sessionStorage.removeItem('pme_logged_user');
+                        showAuth();
                     }
                 });
             }
@@ -1675,26 +1731,17 @@
                 viewToShow.classList.remove('hidden');
             }
 
-            function checkSession() {
-                const loggedUser = sessionStorage.getItem('pme_logged_user');
-                if (loggedUser) {
-                    const user = JSON.parse(loggedUser);
-                    showApp(user);
-                }
-                // Se não tiver local, o listener do Firebase vai tratar
-            }
-
             function showApp(user) {
                 authSection.classList.add('hidden');
                 mainApp.classList.remove('hidden');
                 userArea.classList.remove('hidden');
                 userWelcome.textContent = `Olá, ${user.name}`;
                 
-                // Verifica a licença ao mostrar o app
-                checkLicenseExpiry();
-                
-                // Inicializa o sistema de autosalvamento
+                // Carrega dados da nuvem e sincroniza
                 initializeAutoSave();
+                
+                // Verifica a licença ao mostrar o app
+                // checkLicenseExpiry é chamado dentro de loadAutoSavedData agora, após o sync
                 
                 // Limpa dados de autosalvamento de outros usuários
                 cleanupOldAutoSaveData(user.email);
@@ -1706,12 +1753,13 @@
                 userArea.classList.add('hidden');
                 switchAuthView(viewLogin);
             }
-
+            
+            // Função legada mantida para não quebrar compatibilidade, mas não usada para auth principal
             function getUsersDb() {
                 const users = localStorage.getItem('pme_calculator_users');
                 return users ? JSON.parse(users) : [];
             }
-
+            // Função legada mantida
             function saveUserDb(users) {
                 localStorage.setItem('pme_calculator_users', JSON.stringify(users));
             }
@@ -1731,6 +1779,7 @@
                 }
             }
 
+            // ATUALIZADO: Registro via Firebase + Criação de DB Cloud com Licença
             function handleRegister() {
                 const name = document.getElementById('reg-name').value.trim();
                 const email = document.getElementById('reg-email').value.trim();
@@ -1741,28 +1790,52 @@
                     return;
                 }
 
-                const users = getUsersDb();
-                if (users.find(u => u.email === email)) {
-                    alert("E-mail já cadastrado.");
+                if (!auth) {
+                    alert("Erro: Firebase não configurado.");
                     return;
                 }
 
-                users.push({ name, email, pass });
-                saveUserDb(users);
-                
-                // Cria licença trial automática de 30 dias
-                createTrialLicense(30);
-                
-                alert("Conta criada com sucesso! Você recebeu 30 dias de acesso trial. Faça login.");
-                
-                // Limpar campos
-                document.getElementById('reg-name').value = '';
-                document.getElementById('reg-email').value = '';
-                document.getElementById('reg-pass').value = '';
-                
-                switchAuthView(viewLogin);
+                // Cria usuário na nuvem
+                auth.createUserWithEmailAndPassword(email, pass)
+                    .then((userCredential) => {
+                        const user = userCredential.user;
+                        
+                        // Atualiza perfil (nome)
+                        user.updateProfile({
+                            displayName: name
+                        });
+
+                        // Cria Licença Trial de 30 dias
+                        const trialData = getTrialLicenseData(30);
+                        
+                        // Salva dados iniciais no Firestore
+                        db.collection('users').doc(user.uid).set({
+                            license: trialData,
+                            financialData: {}, // Começa vazio
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        }).then(() => {
+                            // Salva licença localmente também para acesso imediato
+                            localStorage.setItem('pme_calculator_license', JSON.stringify(trialData));
+                            alert("Conta criada com sucesso! Você recebeu 30 dias de acesso trial.");
+                            
+                            // Limpar campos
+                            document.getElementById('reg-name').value = '';
+                            document.getElementById('reg-email').value = '';
+                            document.getElementById('reg-pass').value = '';
+                        });
+                    })
+                    .catch((error) => {
+                        const errorCode = error.code;
+                        const errorMessage = error.message;
+                        if(errorCode === 'auth/email-already-in-use') {
+                            alert("Este e-mail já está cadastrado.");
+                        } else {
+                            alert("Erro ao criar conta: " + errorMessage);
+                        }
+                    });
             }
 
+            // ATUALIZADO: Login via Firebase
             function handleLogin() {
                 const email = document.getElementById('login-email').value.trim();
                 const pass = document.getElementById('login-pass').value.trim();
@@ -1772,18 +1845,23 @@
                     return;
                 }
 
-                const users = getUsersDb();
-                const user = users.find(u => u.email === email && u.pass === pass);
-
-                if (user) {
-                    sessionStorage.setItem('pme_logged_user', JSON.stringify(user));
-                    showApp(user);
-                    // Limpar campos
-                    document.getElementById('login-email').value = '';
-                    document.getElementById('login-pass').value = '';
-                } else {
-                    alert("E-mail ou senha incorretos.");
+                if (!auth) {
+                    alert("Erro: Firebase não configurado.");
+                    return;
                 }
+
+                auth.signInWithEmailAndPassword(email, pass)
+                    .then((userCredential) => {
+                        // O listener onAuthStateChanged cuidará da UI
+                        console.log("Login realizado com sucesso.");
+                        // Limpar campos
+                        document.getElementById('login-email').value = '';
+                        document.getElementById('login-pass').value = '';
+                    })
+                    .catch((error) => {
+                        alert("E-mail ou senha incorretos.");
+                        console.error(error);
+                    });
             }
 
             function handleGoogleLogin() {
@@ -1793,15 +1871,24 @@
                 }
                 auth.signInWithPopup(googleProvider)
                     .then((result) => {
-                        // O onAuthStateChanged vai cuidar da transição de tela
-                        console.log("Logado com Google:", result.user);
+                        const user = result.user;
+                        // Verifica se o documento do usuário existe, se não, cria com trial
+                        const userDocRef = db.collection('users').doc(user.uid);
                         
-                        // Cria licença trial para usuários Google se não tiverem
-                        const licenseData = localStorage.getItem('pme_calculator_license');
-                        if (!licenseData) {
-                            createTrialLicense(30);
-                            alert("Bem-vindo! Você recebeu 30 dias de acesso trial.");
-                        }
+                        userDocRef.get().then((docSnapshot) => {
+                            if (!docSnapshot.exists) {
+                                // Usuário novo via Google: Dá licença Trial
+                                const trialData = getTrialLicenseData(30);
+                                userDocRef.set({
+                                    license: trialData,
+                                    financialData: {},
+                                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                                }).then(() => {
+                                    localStorage.setItem('pme_calculator_license', JSON.stringify(trialData));
+                                    alert("Bem-vindo! Você recebeu 30 dias de acesso trial.");
+                                });
+                            }
+                        });
                     }).catch((error) => {
                         console.error(error);
                         alert("Erro ao entrar com Google: " + error.message);
@@ -1815,30 +1902,20 @@
                     return;
                 }
                 
-                // Simulação de envio
-                const users = getUsersDb();
-                const exists = users.find(u => u.email === email);
-                
-                // Se Firebase estiver ativo, tenta enviar reset real também
                 if (auth) {
                     auth.sendPasswordResetEmail(email)
                         .then(() => {
-                             alert(`E-mail de recuperação enviado para ${email} (via Firebase).`);
+                             alert(`E-mail de recuperação enviado para ${email}. Verifique sua caixa de entrada.`);
                              switchAuthView(viewLogin);
                         })
                         .catch((error) => {
-                            // Se falhar no firebase (ex: usuário não existe lá, mas existe localmente), cai no fallback simulado
-                            alert(`Se o e-mail ${email} estiver cadastrado, você receberá um link de recuperação em instantes.`);
-                            switchAuthView(viewLogin);
+                            alert(`Erro ao enviar email: ${error.message}`);
                         });
-                } else {
-                    alert(`Se o e-mail ${email} estiver cadastrado, você receberá um link de recuperação em instantes.`);
-                    switchAuthView(viewLogin);
                 }
             }
 
             function handleLogout() {
-                // Salva dados antes de sair
+                // Salva dados antes de sair (Nuvem e Local)
                 saveAutoData();
                 
                 sessionStorage.removeItem('pme_logged_user');
@@ -2041,6 +2118,7 @@
                     name: 'Margem Operacional (%)',
                     category: 'Lucratividade e Margens',
                     icon: icons.lucratividade,
+                    calculate: (i) => ((i.faturamentoBruto - i.custosVariaveis - i.custosFixos - i.faturamentoBruto) / i.faturamentoBruto) * 100, // Correção na fórmula original para cálculo percentual
                     calculate: (i) => ((i.faturamentoBruto - i.custosVariaveis - i.custosFixos) / i.faturamentoBruto) * 100,
                     format: (v) => `${v.toFixed(2)}%`,
                     description: 'Percentual do faturamento que vira Lucro Operacional.',
@@ -2545,8 +2623,7 @@
                     return;
                 }
 
-                let csvContent = "data:text/csv;charset=utf-8,";
-                csvContent += "Indicador,Valor Formatado,Categoria,Descricao\r\n";
+                let csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent("Indicador,Valor Formatado,Categoria,Descricao\r\n");
 
                 calculatedResults.forEach(item => {
                     const row = [
@@ -2557,10 +2634,10 @@
                     ].join(",");
                     csvContent += row + "\r\n";
                 });
-
-                const encodedUri = encodeURI(csvContent);
+                
+                // Correção para forçar download
                 const link = document.createElement("a");
-                link.setAttribute("href", encodedUri);
+                link.setAttribute("href", csvContent);
                 link.setAttribute("download", "diagnostico_financeiro.csv");
                 document.body.appendChild(link);
                 link.click();
