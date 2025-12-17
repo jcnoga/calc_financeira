@@ -669,6 +669,8 @@
                             <!-- Botões de Backup e Restore -->
                             <button type="button" id="btn-backup" class="btn btn-secondary">⬇ Backup (JSON)</button>
                             <button type="button" id="btn-restore-trigger" class="btn btn-secondary">📂 Restaurar</button>
+                            <!-- Botão Demo Adicionado -->
+                            <button type="button" id="btn-demo-data" class="btn btn-secondary" style="opacity: 0.7; font-size: 0.9rem;" title="Preencher com dados de exemplo">🎲 Exemplo</button>
                             <input type="file" id="file-restore" accept=".json" style="display: none;">
                         </div>
                         
@@ -749,6 +751,7 @@
             const btnBackup = document.getElementById('btn-backup');
             const btnRestoreTrigger = document.getElementById('btn-restore-trigger');
             const fileRestoreInput = document.getElementById('file-restore');
+            const btnDemoData = document.getElementById('btn-demo-data'); // Botão Demo
 
             let calculatedResults = []; 
             
@@ -1188,6 +1191,27 @@
             btnBackup.addEventListener('click', backupData);
             btnRestoreTrigger.addEventListener('click', triggerRestore);
 
+            // --- Função Demo Data (Exemplo 80k) ---
+            btnDemoData.addEventListener('click', () => {
+                if(confirm('Deseja preencher o formulário com dados de exemplo (Faturamento ~R$ 80k)? Isso substituirá os dados atuais.')) {
+                    document.getElementById('faturamentoBruto').value = 80000;
+                    document.getElementById('custosVariaveis').value = 36000; // ~45%
+                    document.getElementById('custosFixos').value = 22000;     // ~27%
+                    document.getElementById('numeroVendas').value = 650;      // Ticket ~123
+                    document.getElementById('impostos').value = 5500;         // ~7% sobre a operação
+                    
+                    document.getElementById('ativosTotais').value = 120000;
+                    document.getElementById('patrimonioLiquido').value = 70000;
+                    document.getElementById('ativosCirculantes').value = 45000;
+                    document.getElementById('passivosCirculantes').value = 25000;
+                    
+                    document.getElementById('investimentoInicial').value = 90000;
+                    
+                    // Remove alertas visuais de erro se houver
+                    validateForm();
+                }
+            });
+
 
             // --- Funções de Cálculo e Exibição ---
             form.addEventListener('submit', (e) => {
@@ -1453,4 +1477,4 @@
         });
     </script>
 </body>
-</html>```
+</html>
