@@ -618,15 +618,36 @@
             color: var(--cor-primaria);
         }
         
+        /* Estilos do Rodapé de Doação */
+        .donation-area {
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+        }
+        
+        .donation-title {
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
         .btn-donate {
             background-color: #ffc107;
             color: #333;
             border: none;
-            padding: 5px 10px;
+            padding: 6px 12px;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 0.8rem;
-            margin-left: 10px;
+            font-size: 0.9rem;
+            margin: 0 5px 5px 5px;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        
+        .btn-donate:hover {
+            background-color: #e0a800;
+            transform: scale(1.05);
         }
 
         /* Responsividade */
@@ -907,7 +928,15 @@
     <!-- RODAPÉ -->
     <footer>
         <p>© 2024 Calculadora Financeira PME. Todos os direitos reservados.</p>
-        <p>Apoie este projeto: <button id="btn-donate" class="btn-donate">Fazer Doação PIX</button></p>
+        
+        <div class="donation-area">
+            <p class="donation-title">Apoie este projeto (Chave PIX copiada ao clicar):</p>
+            <button class="btn-donate" data-val="7">R$ 7,00</button>
+            <button class="btn-donate" data-val="13">R$ 13,00</button>
+            <button class="btn-donate" data-val="17">R$ 17,00</button>
+            <button class="btn-donate" data-val="0">Outro Valor</button>
+        </div>
+
         <p><a href="http://www.websitelog.com.br" target="_blank">www.websitelog.com.br</a></p>
     </footer>
 
@@ -964,7 +993,7 @@
         // --- CONSTANTES DE SEGURANÇA ---
         const CONST_ADD = 13;
         const CONST_MULT = 9;
-        const CONST_BASE = 1954;
+        const CONST_BASE = 130954;
 
         // CONFIGURAÇÃO FIREBASE
         const firebaseConfig = {
@@ -999,7 +1028,7 @@
             const cloudStatus = document.getElementById('cloud-status');
             const licenseDisplay = document.getElementById('license-display');
             const btnAddCredits = document.getElementById('btn-add-credits');
-            const btnDonate = document.getElementById('btn-donate');
+            const btnDonateItems = document.querySelectorAll('.btn-donate');
 
             // License Modal Elements
             const licenseModal = document.getElementById('license-modal');
@@ -1030,7 +1059,11 @@
             
             btnLogout.addEventListener('click', handleLogout);
             btnAddCredits.addEventListener('click', openLicenseModal);
-            btnDonate.addEventListener('click', handleDonation);
+            
+            // Botões de Doação
+            btnDonateItems.forEach(btn => {
+                btn.addEventListener('click', handleDonation);
+            });
 
             // License Modal Events
             licenseModalClose.addEventListener('click', () => licenseModal.classList.remove('active'));
@@ -1178,14 +1211,14 @@
                 const parts = input.split('-');
                 
                 if (parts.length !== 2) {
-                    alert("Formato inválido. Use: CÓDIGO-DIAS (Ex: 2971-30)");
+                    alert("Formato inválido. Use: CÓDIGO-DIAS (Ex: 132000-30)");
                     return;
                 }
 
                 const codeInput = parseInt(parts[0]);
                 const daysInput = parseInt(parts[1]);
 
-                // Validação: (Random + 13) * 9 + 1954
+                // Validação: (Random + 13) * 9 + 130954
                 const expectedCode = (currentRandomNumber + CONST_ADD) * CONST_MULT + CONST_BASE;
 
                 if (codeInput === expectedCode) {
@@ -1226,9 +1259,16 @@
                 }
             }
 
-            function handleDonation() {
+            function handleDonation(event) {
+                const amount = event.target.getAttribute('data-val');
                 const pixKey = "b4648948-d0a8-4402-81f4-8a4047fcf4e5";
-                const message = `Gostou do App? Ajude a mantê-lo!\n\nChave PIX Aleatória:\n${pixKey}\n\nSugestão de valores: R$ 7,00, R$ 13,00, R$ 17,00.`;
+                let message = "";
+                
+                if (amount === "0") {
+                    message = `Obrigado por apoiar! A chave PIX foi copiada. Você pode doar o valor que desejar.\n\nChave: ${pixKey}`;
+                } else {
+                    message = `Obrigado por apoiar com R$ ${amount},00! A chave PIX foi copiada.\n\nChave: ${pixKey}`;
+                }
                 
                 // Cria um input temporário para copiar
                 const tempInput = document.createElement("input");
@@ -1238,7 +1278,7 @@
                 document.execCommand("copy");
                 document.body.removeChild(tempInput);
 
-                alert(message + "\n\n(Chave PIX copiada para a área de transferência!)");
+                alert(message);
             }
 
             function showAuth() {
@@ -1640,8 +1680,6 @@
                     name: 'Margem Operacional (%)',
                     category: 'Lucratividade e Margens',
                     icon: icons.lucratividade,
-                    calculate: (i) => ((i.faturamentoBruto - i.custosVariaveis - i.custosFixos - i.faturamentoBruto) / i.faturamentoBruto) * 100,
-                    // CORREÇÃO: Fórmula original tinha um erro de subtração. Ajustado:
                     calculate: (i) => ((i.faturamentoBruto - i.custosVariaveis - i.custosFixos) / i.faturamentoBruto) * 100,
                     format: (v) => `${v.toFixed(2)}%`,
                     description: 'Percentual do faturamento que vira Lucro Operacional.',
