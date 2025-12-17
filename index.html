@@ -5,25 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calculadora Financeira para PMEs</title>
     
-    <!-- BLOQUEIO DE EXECUÇÃO DIRETA (file://) -->
-    <script>
-        if (window.location.protocol === 'file:') {
-            document.body.innerHTML = '';
-            document.write('<div style="font-family:sans-serif; text-align:center; padding:50px;"><h1>⚠️ Execução Bloqueada</h1><p>Por segurança e funcionamento do Firebase, este aplicativo não pode ser executado diretamente pelo arquivo (file://).</p><p>Utilize um servidor local (ex: Live Server do VSCode, XAMPP, Python http.server) ou hospede na web.</p></div>');
-            throw new Error("Execução via file:// bloqueada.");
-        }
-    </script>
-
-    <!-- FIREBASE SDKs -->
+    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-
-    <!-- CSS Externo -->
+    
+    <!-- Configuração Firebase -->
+    <script src="firebase-config.js" defer></script>
+    
+    <!-- Estilos -->
     <link rel="stylesheet" href="style.css">
+    
+    <!-- Scripts da Aplicação -->
+    <script src="storage.js" defer></script>
+    <script src="auth.js" defer></script>
+    <script src="license.js" defer></script>
+    <script src="app.js" defer></script>
+    
+    <!-- Verificação de execução -->
+    <script>
+        // Impede execução direta apenas pelo HTML
+        if (!window.location.href.includes('?authorized=true')) {
+            window.location.href = 'blocked.html';
+        }
+    </script>
 </head>
 <body>
-
     <div class="app-container">
         <header>
             <div class="header-content">
@@ -32,19 +39,17 @@
             </div>
             <!-- Controles de Usuário (Visível apenas se logado) -->
             <div id="user-area" class="user-controls hidden">
-                <div id="cloud-status" class="cloud-status">☁️ Conectado</div>
-                <span id="license-display" class="license-info">Licença: Verificando...</span>
-                <button id="btn-add-credits" class="btn-license">🔑 Créditos</button>
                 <span id="user-welcome" class="welcome-msg">Olá, Usuário</span>
+                <!-- Botão de Licença -->
+                <div class="license-controls">
+                    <button id="btn-license" class="btn-license">🔑 Licença</button>
+                </div>
                 <button id="btn-logout" class="btn-logout">Sair</button>
             </div>
         </header>
 
-        <!-- ======================= -->
-        <!--   SISTEMA DE LOGIN      -->
-        <!-- ======================= -->
+        <!-- Sistema de Login -->
         <div id="auth-section">
-            
             <!-- Tela de Login -->
             <div id="login-view" class="auth-container">
                 <h2 class="auth-title">Acesso Restrito</h2>
@@ -62,7 +67,12 @@
                     <!-- Opção Google -->
                     <div class="auth-divider"><span>ou</span></div>
                     <button id="btn-google-login" class="btn btn-google">
-                        <svg class="google-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
+                        <svg class="google-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                            <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+                            <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+                            <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+                            <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+                        </svg>
                         Entrar com Google
                     </button>
                 </div>
@@ -120,13 +130,9 @@
             </nav>
 
             <main class="app-content">
-
-                <!-- ======================= -->
-                <!--   SEÇÃO DE ENTRADA      -->
-                <!-- ======================= -->
+                <!-- Seção de Entrada -->
                 <section id="input-section" class="app-section active">
                     <form id="financial-form">
-                        
                         <details open>
                             <summary>Dados Operacionais (DRE)</summary>
                             <div class="form-fields-grid">
@@ -185,7 +191,7 @@
                         
                         <details>
                             <summary>Balanço Patrimonial</summary>
-                             <div class="form-fields-grid">
+                            <div class="form-fields-grid">
                                 <div class="form-group">
                                     <div class="label-wrapper">
                                         <label for="ativosTotais">Ativos Totais</label>
@@ -231,7 +237,7 @@
 
                         <details>
                             <summary>Investimento</summary>
-                             <div class="form-fields-grid">
+                            <div class="form-fields-grid">
                                 <div class="form-group">
                                     <div class="label-wrapper">
                                         <label for="investimentoInicial">Investimento Inicial (Total)</label>
@@ -255,14 +261,13 @@
                                 <input type="file" id="file-restore" accept=".json" style="display: none;">
                             </div>
                             
-                            <button type="submit" class="btn btn-primary">Calcular 25 Indicadores 🚀</button>
+                            <!-- Botão Calcular (escondido inicialmente) -->
+                            <button type="submit" class="btn btn-primary btn-calculate-hidden" id="btn-calculate">Calcular 25 Indicadores 🚀</button>
                         </div>
                     </form>
                 </section>
 
-                <!-- ======================= -->
-                <!--   SEÇÃO DE RESULTADOS   -->
-                <!-- ======================= -->
+                <!-- Seção de Resultados -->
                 <section id="results-section" class="app-section">
                     <div class="results-header">
                         <h2>Seu Diagnóstico Financeiro</h2>
@@ -277,10 +282,9 @@
                         <!-- Categorias e Cards serão injetados aqui pelo JS -->
                     </div>
                 </section>
-
             </main>
             
-            <!-- RODAPÉ -->
+            <!-- Rodapé -->
             <footer class="app-footer">
                 <div class="footer-links">
                     <a href="https://www.websitelog.com.br" target="_blank">www.websitelog.com.br</a>
@@ -296,9 +300,7 @@
         </div>
     </div>
 
-    <!-- ======================= -->
-    <!--   MODAL DE DETALHES     -->
-    <!-- ======================= -->
+    <!-- Modal de Detalhes -->
     <div id="modal-container" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -318,9 +320,7 @@
         </div>
     </div>
     
-    <!-- ======================= -->
-    <!--   MODAL DE LICENÇA      -->
-    <!-- ======================= -->
+    <!-- Modal de Licença -->
     <div id="license-modal" class="modal-overlay">
         <div class="modal-content license-modal">
             <div class="modal-header">
@@ -328,10 +328,6 @@
                 <button class="modal-close" data-modal="license">&times;</button>
             </div>
             <div class="modal-body">
-                <p style="text-align: center; margin-bottom: 20px; font-size: 0.95rem; color: #555;">
-                    Para liberar o acesso, gere um código e envie ao administrador.
-                </p>
-
                 <div class="form-group">
                     <label for="license-code">Código Gerado:</label>
                     <div class="license-input-group">
@@ -340,35 +336,13 @@
                     </div>
                 </div>
                 
-                <!-- ÁREA ADMINISTRATIVA OCULTA (CSS) -->
-                <div class="admin-only" style="display: none;">
-                    <div class="form-group">
-                        <label for="license-days">Dias de Liberação:</label>
-                        <input type="number" id="license-days" min="1" max="365" value="30" placeholder="Número de dias">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="password-result">Contra-senha:</label>
-                        <div class="license-input-group">
-                            <input type="text" id="password-result" readonly placeholder="Contra-senha será gerada aqui">
-                            <button id="btn-calculate-password" class="btn btn-primary">Calcular</button>
-                        </div>
-                    </div>
-                    
-                    <div id="license-calculation" class="license-result hidden">
-                        <h4>Cálculo da Contra-senha:</h4>
-                        <p id="calculation-details"></p>
-                    </div>
-                </div>
-                <!-- FIM DA ÁREA ADMINISTRATIVA -->
-                
                 <div class="form-group">
-                    <label for="license-input">Inserir Licença:</label>
+                    <label for="license-input">Inserir Código de Licença:</label>
                     <div class="license-input-group">
-                        <input type="text" id="license-input" placeholder="Cole a contra-senha aqui (Formato: CÓDIGO-DIAS)">
+                        <input type="text" id="license-input" placeholder="Formato: xxxxx-yyy (ex: 139405-31)">
                         <button id="btn-activate-license" class="btn btn-success">Ativar Licença</button>
                     </div>
-                    <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">Você receberá uma contra-senha no formato: <strong>CHAVE-DIAS</strong> (ex: 139405-31).</p>
+                    <small>Formato: xxxxx-yyy onde xxxxx é o código gerado e yyy é o número de dias de crédito a liberar</small>
                 </div>
                 
                 <div id="license-info" class="license-result hidden">
@@ -379,9 +353,5 @@
             </div>
         </div>
     </div>
-
-    <!-- JavaScript Externo -->
-    <script src="script.js"></script>
 </body>
 </html>
-```
