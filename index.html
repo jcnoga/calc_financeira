@@ -1640,6 +1640,8 @@
                     name: 'Margem Operacional (%)',
                     category: 'Lucratividade e Margens',
                     icon: icons.lucratividade,
+                    calculate: (i) => ((i.faturamentoBruto - i.custosVariaveis - i.custosFixos - i.faturamentoBruto) / i.faturamentoBruto) * 100,
+                    // CORREÇÃO: Fórmula original tinha um erro de subtração. Ajustado:
                     calculate: (i) => ((i.faturamentoBruto - i.custosVariaveis - i.custosFixos) / i.faturamentoBruto) * 100,
                     format: (v) => `${v.toFixed(2)}%`,
                     description: 'Percentual do faturamento que vira Lucro Operacional.',
@@ -1868,6 +1870,7 @@
 
             // --- Funções de Backup e Restore ---
             function backupData() {
+                // Permite backup mesmo com dados parciais, mas avisa se inválido
                 if (!validateForm()) {
                     if (!confirm("Alguns campos estão vazios ou inválidos. Deseja fazer o backup mesmo assim?")) {
                         return;
@@ -1877,8 +1880,14 @@
                 const inputs = getFormInputs();
                 const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(inputs, null, 2));
                 const downloadAnchorNode = document.createElement('a');
+                
+                // Adiciona timestamp ao nome do arquivo
+                const date = new Date().toISOString().slice(0, 10);
+                const time = new Date().toTimeString().split(' ')[0].replace(/:/g, '-');
+                const filename = `backup_financeiro_${date}_${time}.json`;
+                
                 downloadAnchorNode.setAttribute("href", dataStr);
-                downloadAnchorNode.setAttribute("download", "backup_financeiro.json");
+                downloadAnchorNode.setAttribute("download", filename);
                 document.body.appendChild(downloadAnchorNode); // Necessário para Firefox
                 downloadAnchorNode.click();
                 downloadAnchorNode.remove();
@@ -1900,10 +1909,14 @@
                         
                         // Popula os campos
                         populateForm(data);
-                        saveUserData(currentUserEmail); // Salva o restore na nuvem também
+                        validateForm(); // Remove erros visuais se houver
+                        
+                        // Salva imediatamente para evitar perda se fechar
+                        if (currentUserEmail) {
+                            saveUserData(currentUserEmail);
+                        }
                         
                         alert("Dados restaurados com sucesso! Clique em 'Calcular' para ver os resultados.");
-                        validateForm(); // Remove erros visuais se houver
                         
                     } catch (err) {
                         console.error(err);
@@ -1917,28 +1930,33 @@
             btnBackup.addEventListener('click', backupData);
             btnRestoreTrigger.addEventListener('click', triggerRestore);
 
-            // --- Função Demo Data (Exemplo 80k - CORRIGIDO) ---
+            // --- Função Demo Data (80k Faturamento PME) ---
             btnDemoData.addEventListener('click', () => {
-                if(confirm('Deseja preencher o formulário com dados de exemplo (Faturamento ~R$ 80k)? Isso substituirá os dados atuais.')) {
+                if(confirm('Deseja preencher o formulário com dados de exemplo (PME Faturamento ~R$ 80k)? Isso substituirá os dados atuais.')) {
+                    // Valores ajustados para 80k de faturamento e Balanço Patrimonial Equilibrado
+                    // Ativos Totais (150k) = Passivos (50k) + PL (100k)
                     const demoValues = {
                         'faturamentoBruto': 80000,
-                        'custosVariaveis': 36000,
-                        'custosFixos': 22000,
-                        'numeroVendas': 650,
-                        'impostos': 5500,
-                        'ativosTotais': 120000,
-                        'patrimonioLiquido': 70000,
-                        'ativosCirculantes': 45000,
-                        'passivosCirculantes': 25000,
-                        'investimentoInicial': 90000
+                        'custosVariaveis': 32000, // ~40% do faturamento
+                        'custosFixos': 24000,     // ~30% do faturamento
+                        'numeroVendas': 800,      // Ticket Médio R$ 100
+                        'impostos': 4800,         // ~6% (Simples Nacional Comércio/Serviço)
+                        'ativosTotais': 150000,
+                        'patrimonioLiquido': 100000,
+                        'ativosCirculantes': 60000,
+                        'passivosCirculantes': 50000,
+                        'investimentoInicial': 100000
                     };
 
                     populateForm(demoValues);
                     
                     // Remove alertas visuais de erro se houver
                     validateForm();
-                    // Salva automaticamente o exemplo e força o evento input para update visual
-                    saveUserData(currentUserEmail);
+                    
+                    // Salva imediatamente para evitar perda se a aba for fechada
+                    if (currentUserEmail) {
+                        saveUserData(currentUserEmail);
+                    }
                 }
             });
 
@@ -2134,8 +2152,7 @@
                     return;
                 }
 
-                let csvContent = "data:text/csv;charset=utf-8,";
-                csvContent += "Indicador,Valor Formatado,Categoria,Descricao\r\n";
+                let csvContent = "data:text/csv;charset=utf-8," + encodeURI("Indicador,Valor Formatado,Categoria,Descricao\r\n");
 
                 calculatedResults.forEach(item => {
                     const row = [
