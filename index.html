@@ -732,6 +732,70 @@
             display: none !important;
         }
 
+        /* Indicador de autosalvamento */
+        .auto-save-status {
+            font-size: 0.8rem;
+            color: var(--cor-texto-claro);
+            margin-top: 5px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .auto-save-status .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--cor-secundaria);
+            display: inline-block;
+        }
+        
+        .auto-save-status.saving .status-indicator {
+            background-color: #ffc107;
+            animation: pulse 1.5s infinite;
+        }
+        
+        .auto-save-status.saved .status-indicator {
+            background-color: var(--cor-sucesso);
+        }
+        
+        .auto-save-status.error .status-indicator {
+            background-color: var(--cor-perigo);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Notificação de recuperação */
+        .recovery-notice {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 10px 15px;
+            border-radius: var(--borda-raio);
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateY(-10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .recovery-notice .close-btn {
+            background: none;
+            border: none;
+            color: #856404;
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 0 5px;
+        }
+
         /* Responsividade */
         @media (max-width: 768px) {
             .app-content {
@@ -883,6 +947,12 @@
 
         <!-- Container Principal da Aplicação (Oculto até login) -->
         <div id="main-application" class="hidden">
+            <!-- Notificação de recuperação de dados -->
+            <div id="recovery-notice" class="recovery-notice hidden">
+                <span id="recovery-message">Dados recuperados do último uso. Clique para restaurar.</span>
+                <button id="close-recovery-notice" class="close-btn">&times;</button>
+            </div>
+            
             <nav class="app-nav">
                 <button id="tab-btn-input" class="active" data-tab="input-section">1. Entrada de Dados</button>
                 <button id="tab-btn-results" data-tab="results-section">2. Resultados e Análise</button>
@@ -1026,6 +1096,12 @@
                             
                             <!-- Botão Calcular (escondido inicialmente) -->
                             <button type="submit" class="btn btn-primary btn-calculate-hidden" id="btn-calculate">Calcular 25 Indicadores 🚀</button>
+                        </div>
+                        
+                        <!-- Status do autosalvamento -->
+                        <div id="auto-save-status" class="auto-save-status">
+                            <span class="status-indicator"></span>
+                            <span id="save-status-text">Autosalvamento ativo</span>
                         </div>
                     </form>
                 </section>
@@ -1177,6 +1253,178 @@
             const donationButtons = document.querySelectorAll('.btn-donation[data-amount]');
             const btnDonationOther = document.getElementById('btn-donation-other');
             const PIX_KEY = 'b4648948-d0a8-4402-81f4-8a4047fcf4e5';
+            
+            // Elementos para o sistema de recuperação
+            const recoveryNotice = document.getElementById('recovery-notice');
+            const recoveryMessage = document.getElementById('recovery-message');
+            const closeRecoveryNotice = document.getElementById('close-recovery-notice');
+            const autoSaveStatus = document.getElementById('auto-save-status');
+            const saveStatusText = document.getElementById('save-status-text');
+            
+            // Configuração do autosalvamento
+            const AUTO_SAVE_INTERVAL = 30000; // 30 segundos
+            const AUTO_SAVE_KEY = 'pme_calculator_autosave';
+            const LAST_SESSION_KEY = 'pme_calculator_last_session';
+            let autoSaveTimer = null;
+            let isSaving = false;
+            
+            // Funções do Sistema de Recuperação e Autosalvamento
+            function initializeAutoSave() {
+                // Carrega dados salvos automaticamente
+                loadAutoSavedData();
+                
+                // Configura o salvamento automático periódico
+                autoSaveTimer = setInterval(saveAutoData, AUTO_SAVE_INTERVAL);
+                
+                // Salva automaticamente quando o usuário sai da página
+                window.addEventListener('beforeunload', saveAutoData);
+                
+                // Monitora alterações nos campos
+                setupInputMonitoring();
+                
+                // Atualiza o status do autosalvamento
+                updateAutoSaveStatus('saved');
+            }
+            
+            function setupInputMonitoring() {
+                const inputs = document.querySelectorAll('#financial-form input');
+                inputs.forEach(input => {
+                    input.addEventListener('input', () => {
+                        updateAutoSaveStatus('saving');
+                        // Salva após 1 segundo de inatividade (debounce)
+                        clearTimeout(window.inputDebounceTimer);
+                        window.inputDebounceTimer = setTimeout(() => {
+                            saveAutoData();
+                        }, 1000);
+                    });
+                });
+            }
+            
+            function saveAutoData() {
+                if (isSaving) return;
+                
+                isSaving = true;
+                updateAutoSaveStatus('saving');
+                
+                try {
+                    const inputs = getFormInputs();
+                    const saveData = {
+                        data: inputs,
+                        timestamp: new Date().toISOString(),
+                        userId: getCurrentUserId()
+                    };
+                    
+                    localStorage.setItem(AUTO_SAVE_KEY, JSON.stringify(saveData));
+                    localStorage.setItem(LAST_SESSION_KEY, new Date().toISOString());
+                    
+                    setTimeout(() => {
+                        isSaving = false;
+                        updateAutoSaveStatus('saved');
+                    }, 500);
+                    
+                    return true;
+                } catch (error) {
+                    console.error('Erro ao salvar automaticamente:', error);
+                    isSaving = false;
+                    updateAutoSaveStatus('error');
+                    return false;
+                }
+            }
+            
+            function loadAutoSavedData() {
+                try {
+                    const savedData = localStorage.getItem(AUTO_SAVE_KEY);
+                    const lastSession = localStorage.getItem(LAST_SESSION_KEY);
+                    
+                    if (savedData && lastSession) {
+                        const data = JSON.parse(savedData);
+                        const lastSessionDate = new Date(lastSession);
+                        const now = new Date();
+                        const hoursDiff = Math.abs(now - lastSessionDate) / 36e5; // Diferença em horas
+                        
+                        // Só mostra a notificação se os dados foram salvados há menos de 24 horas
+                        if (hoursDiff < 24 && data.userId === getCurrentUserId()) {
+                            showRecoveryNotice(data.data);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Erro ao carregar dados salvos:', error);
+                }
+            }
+            
+            function showRecoveryNotice(data) {
+                recoveryMessage.textContent = 'Dados não salvos foram recuperados da sua última sessão. Clique aqui para restaurar.';
+                recoveryNotice.classList.remove('hidden');
+                
+                recoveryNotice.addEventListener('click', (e) => {
+                    if (e.target !== closeRecoveryNotice) {
+                        restoreAutoSavedData(data);
+                        recoveryNotice.classList.add('hidden');
+                    }
+                });
+                
+                closeRecoveryNotice.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    recoveryNotice.classList.add('hidden');
+                });
+            }
+            
+            function restoreAutoSavedData(data) {
+                if (confirm('Deseja restaurar os dados da sua última sessão?')) {
+                    for (const [key, value] of Object.entries(data)) {
+                        const input = document.getElementById(key);
+                        if (input) {
+                            input.value = value;
+                        }
+                    }
+                    alert('Dados restaurados com sucesso!');
+                }
+            }
+            
+            function updateAutoSaveStatus(status) {
+                autoSaveStatus.className = 'auto-save-status';
+                autoSaveStatus.classList.add(status);
+                
+                switch(status) {
+                    case 'saving':
+                        saveStatusText.textContent = 'Salvando...';
+                        break;
+                    case 'saved':
+                        saveStatusText.textContent = 'Salvo automaticamente';
+                        break;
+                    case 'error':
+                        saveStatusText.textContent = 'Erro ao salvar';
+                        break;
+                    default:
+                        saveStatusText.textContent = 'Autosalvamento ativo';
+                }
+            }
+            
+            function getCurrentUserId() {
+                const loggedUser = sessionStorage.getItem('pme_logged_user');
+                if (loggedUser) {
+                    const user = JSON.parse(loggedUser);
+                    return user.email;
+                }
+                return 'anonymous';
+            }
+            
+            // Função para criar licença trial automática
+            function createTrialLicense(days = 30) {
+                const trialExpiryDate = new Date();
+                trialExpiryDate.setDate(trialExpiryDate.getDate() + days);
+                
+                const trialLicenseData = {
+                    license: 'TRIAL-' + Math.random().toString(36).substr(2, 9),
+                    activationDate: new Date().toISOString(),
+                    expiryDate: trialExpiryDate.toISOString(),
+                    days: days,
+                    isTrial: true
+                };
+                
+                localStorage.setItem('pme_calculator_license', JSON.stringify(trialLicenseData));
+                return trialLicenseData;
+            }
             
             // Funções do Sistema de Licença
             function generateRandomCode() {
@@ -1444,6 +1692,12 @@
                 
                 // Verifica a licença ao mostrar o app
                 checkLicenseExpiry();
+                
+                // Inicializa o sistema de autosalvamento
+                initializeAutoSave();
+                
+                // Limpa dados de autosalvamento de outros usuários
+                cleanupOldAutoSaveData(user.email);
             }
 
             function showAuth() {
@@ -1460,6 +1714,21 @@
 
             function saveUserDb(users) {
                 localStorage.setItem('pme_calculator_users', JSON.stringify(users));
+            }
+            
+            function cleanupOldAutoSaveData(currentUserEmail) {
+                try {
+                    const savedData = localStorage.getItem(AUTO_SAVE_KEY);
+                    if (savedData) {
+                        const data = JSON.parse(savedData);
+                        if (data.userId && data.userId !== currentUserEmail) {
+                            localStorage.removeItem(AUTO_SAVE_KEY);
+                            localStorage.removeItem(LAST_SESSION_KEY);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Erro ao limpar dados antigos:', error);
+                }
             }
 
             function handleRegister() {
@@ -1480,7 +1749,11 @@
 
                 users.push({ name, email, pass });
                 saveUserDb(users);
-                alert("Conta criada com sucesso! Faça login.");
+                
+                // Cria licença trial automática de 30 dias
+                createTrialLicense(30);
+                
+                alert("Conta criada com sucesso! Você recebeu 30 dias de acesso trial. Faça login.");
                 
                 // Limpar campos
                 document.getElementById('reg-name').value = '';
@@ -1522,6 +1795,13 @@
                     .then((result) => {
                         // O onAuthStateChanged vai cuidar da transição de tela
                         console.log("Logado com Google:", result.user);
+                        
+                        // Cria licença trial para usuários Google se não tiverem
+                        const licenseData = localStorage.getItem('pme_calculator_license');
+                        if (!licenseData) {
+                            createTrialLicense(30);
+                            alert("Bem-vindo! Você recebeu 30 dias de acesso trial.");
+                        }
                     }).catch((error) => {
                         console.error(error);
                         alert("Erro ao entrar com Google: " + error.message);
@@ -1558,6 +1838,9 @@
             }
 
             function handleLogout() {
+                // Salva dados antes de sair
+                saveAutoData();
+                
                 sessionStorage.removeItem('pme_logged_user');
                 if (auth) {
                     auth.signOut().then(() => {
@@ -1565,6 +1848,11 @@
                     });
                 } else {
                     showAuth();
+                }
+                
+                // Limpa o timer de autosalvamento
+                if (autoSaveTimer) {
+                    clearInterval(autoSaveTimer);
                 }
             }
 
@@ -2072,6 +2360,9 @@
                     calculatedResults = calculateAllIndicators(inputs);
                     displayResults(calculatedResults);
                     switchTab('results-section');
+                    
+                    // Salva os dados após o cálculo
+                    saveAutoData();
                 } else {
                     alert('Por favor, preencha todos os campos obrigatórios com valores válidos (positivos).');
                 }
