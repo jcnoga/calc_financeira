@@ -5,7 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calculadora Financeira para PMEs</title>
     
-    <!-- FIREBASE SDKs (Atualizado com Firestore) -->
+    <!-- BLOQUEIO DE EXECUÇÃO DIRETA (file://) -->
+    <script>
+        if (window.location.protocol === 'file:') {
+            document.write('<div style="font-family:sans-serif; text-align:center; padding:50px;"><h1>⚠️ Execução Bloqueada</h1><p>Por segurança e funcionamento do Firebase, este aplicativo não pode ser executado diretamente pelo arquivo (file://).</p><p>Utilize um servidor local (ex: Live Server do VSCode, XAMPP, Python http.server) ou hospede na web.</p></div>');
+            throw new Error("Execução via file:// bloqueada.");
+        }
+    </script>
+
+    <!-- FIREBASE SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -37,6 +45,9 @@
             color: var(--cor-texto);
             line-height: 1.6;
             padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
         }
 
         .app-container {
@@ -48,10 +59,10 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            min-height: 80vh;
+            flex: 1; /* Para ocupar espaço e empurrar o footer */
         }
 
-        /* Header Atualizado para Login */
+        /* Header Atualizado */
         header {
             padding: 1.5rem 2rem;
             background-color: var(--cor-primaria);
@@ -77,6 +88,14 @@
             font-size: 0.9rem;
         }
 
+        .license-info {
+            font-size: 0.8rem;
+            background: rgba(0,0,0,0.2);
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-right: 5px;
+        }
+
         /* Indicador de Status da Nuvem */
         .cloud-status {
             font-size: 0.8rem;
@@ -89,7 +108,7 @@
             margin-right: 10px;
         }
 
-        .btn-logout {
+        .btn-logout, .btn-license {
             background: rgba(255,255,255,0.2);
             border: 1px solid rgba(255,255,255,0.4);
             color: white;
@@ -100,7 +119,7 @@
             transition: 0.2s;
         }
         
-        .btn-logout:hover {
+        .btn-logout:hover, .btn-license:hover {
             background: rgba(255,255,255,0.3);
         }
 
@@ -150,7 +169,6 @@
             text-decoration: underline;
         }
 
-        /* Estilo Botão Google (Novo) */
         .btn-google {
             background-color: #fff;
             color: #757575;
@@ -258,15 +276,15 @@
             cursor: pointer;
             font-weight: 600;
             font-size: 1.1rem;
-            list-style: none; /* Remove a seta padrão */
+            list-style: none;
         }
 
         summary::-webkit-details-marker {
-            display: none; /* Chrome */
+            display: none;
         }
         
         summary::before {
-            content: '► '; /* Seta personalizada */
+            content: '► ';
             font-size: 0.8em;
             margin-right: 0.5rem;
         }
@@ -322,7 +340,6 @@
             color: white;
         }
 
-        /* --- MELHORIA DE DESTAQUE NOS CAMPOS --- */
         .form-group input {
             padding: 0.75rem;
             border: 1px solid #ccc;
@@ -334,12 +351,11 @@
         .form-group input:focus {
             outline: none;
             border-color: var(--cor-primaria);
-            background-color: #f0f8ff; /* Azul bem claro */
+            background-color: #f0f8ff;
             box-shadow: 0 0 0 3px rgba(0,123,255,0.25);
             transform: translateY(-2px);
         }
 
-        /* Destaque para campos preenchidos */
         .form-group input:not(:placeholder-shown) {
             border-left: 4px solid var(--cor-primaria);
         }
@@ -348,13 +364,12 @@
             color: var(--cor-perigo);
             font-size: 0.875rem;
             margin-top: 0.25rem;
-            display: none; /* Oculto por padrão */
+            display: none;
         }
 
-        /* Atualizado: Form Actions com espaço entre elementos */
         .form-actions {
             display: flex;
-            justify-content: space-between; /* Separa Backup do Calcular */
+            justify-content: space-between;
             align-items: center;
             padding-top: 1rem;
             border-top: 1px solid #eee;
@@ -391,7 +406,6 @@
             background-color: #0056b3;
         }
         
-        /* Novo estilo para botão secundário */
         .btn-secondary {
             background-color: #e9ecef;
             color: var(--cor-texto);
@@ -524,151 +538,109 @@
             padding: 0.25rem;
         }
 
-        /* Modal de Detalhes */
+        /* Modal Comum e Modal de Bloqueio */
         .modal-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.6);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            opacity: 0;
-            visibility: hidden;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000; opacity: 0; visibility: hidden;
             transition: all 0.3s ease;
         }
 
         .modal-overlay.active {
-            opacity: 1;
-            visibility: visible;
+            opacity: 1; visibility: visible;
         }
 
         .modal-content {
-            background: white;
-            padding: 2rem;
-            border-radius: var(--borda-raio);
-            max-width: 600px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-            transform: scale(0.9);
-            transition: all 0.3s ease;
+            background: white; padding: 2rem; border-radius: var(--borda-raio);
+            max-width: 600px; width: 90%; max-height: 90vh;
+            overflow-y: auto; transform: scale(0.9); transition: all 0.3s ease;
         }
         
-        .modal-overlay.active .modal-content {
-            transform: scale(1);
-        }
+        .modal-overlay.active .modal-content { transform: scale(1); }
 
         .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 1rem;
-            margin-bottom: 1rem;
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid #eee; padding-bottom: 1rem; margin-bottom: 1rem;
         }
         
-        .modal-header h3 {
-            font-size: 1.5rem;
-            color: var(--cor-primaria);
-        }
+        .modal-header h3 { font-size: 1.5rem; color: var(--cor-primaria); }
 
         .modal-close {
-            font-size: 2rem;
-            font-weight: 300;
-            border: none;
-            background: none;
-            cursor: pointer;
-            line-height: 1;
+            font-size: 2rem; font-weight: 300; border: none;
+            background: none; cursor: pointer; line-height: 1;
         }
         
         .modal-section-title {
-            font-size: 1.1rem;
-            color: var(--cor-secundaria);
-            margin-top: 1.5rem;
-            margin-bottom: 0.5rem;
-            display: block;
+            font-size: 1.1rem; color: var(--cor-secundaria);
+            margin-top: 1.5rem; margin-bottom: 0.5rem; display: block;
         }
         
         .modal-body .formula {
-            background: #f1f1f1;
-            padding: 0.75rem;
-            border-radius: var(--borda-raio);
-            font-family: 'Courier New', Courier, monospace;
-            font-weight: 600;
-            color: #333;
+            background: #f1f1f1; padding: 0.75rem; border-radius: var(--borda-raio);
+            font-family: 'Courier New', Courier, monospace; font-weight: 600; color: #333;
         }
         
-        .modal-body p {
-            font-size: 0.95rem;
-            line-height: 1.7;
-        }
+        .modal-body p { font-size: 0.95rem; line-height: 1.7; }
 
         .modal-body .interpretation {
-            border-left: 4px solid var(--cor-sucesso);
-            padding-left: 1rem;
-            font-style: italic;
-            background: #f9fef9;
+            border-left: 4px solid var(--cor-sucesso); padding-left: 1rem;
+            font-style: italic; background: #f9fef9;
         }
 
-        .modal-body .interpretation.negative {
-            border-left-color: var(--cor-perigo);
-            background: #fef9f9;
-        }
-        .modal-body .interpretation.neutral {
-            border-left-color: var(--cor-primaria);
-            background: #f9f9ff;
+        .modal-body .interpretation.negative { border-left-color: var(--cor-perigo); background: #fef9f9; }
+        .modal-body .interpretation.neutral { border-left-color: var(--cor-primaria); background: #f9f9ff; }
+
+        /* Estilo Específico Modal Bloqueio/Licença */
+        .lock-code-display {
+            background: #333; color: #0f0; padding: 10px;
+            font-family: monospace; font-size: 1.5rem; text-align: center;
+            margin: 15px 0; border-radius: 4px;
         }
         
+        footer {
+            background-color: #343a40;
+            color: #fff;
+            text-align: center;
+            padding: 1.5rem;
+            margin-top: 2rem;
+        }
+        
+        footer a {
+            color: #fff;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        
+        footer a:hover {
+            text-decoration: underline;
+            color: var(--cor-primaria);
+        }
+        
+        .btn-donate {
+            background-color: #ffc107;
+            color: #333;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            margin-left: 10px;
+        }
+
         /* Responsividade */
         @media (max-width: 768px) {
-            .app-content {
-                padding: 1rem;
-            }
-            
-            .form-fields-grid {
-                grid-template-columns: 1fr; 
-            }
-
-            .results-header {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-            
-            .results-actions {
-                width: 100%;
-                display: flex;
-                gap: 0.5rem;
-            }
-            .results-actions button {
-                flex: 1;
-                margin-left: 0;
-            }
-            
-            .form-actions {
-                flex-direction: column-reverse;
-            }
-            
-            .form-actions button, .backup-controls {
-                width: 100%;
-            }
-            
-            .backup-controls {
-                justify-content: space-between;
-            }
-            
-            .backup-controls button {
-                flex: 1;
-            }
-
-            header {
-                flex-direction: column;
-                text-align: center;
-                gap: 1rem;
-            }
+            .app-content { padding: 1rem; }
+            .form-fields-grid { grid-template-columns: 1fr; }
+            .results-header { flex-direction: column; align-items: flex-start; }
+            .results-actions { width: 100%; display: flex; gap: 0.5rem; }
+            .results-actions button { flex: 1; margin-left: 0; }
+            .form-actions { flex-direction: column-reverse; }
+            .form-actions button, .backup-controls { width: 100%; }
+            .backup-controls { justify-content: space-between; }
+            .backup-controls button { flex: 1; }
+            header { flex-direction: column; text-align: center; gap: 1rem; }
         }
     </style>
 </head>
@@ -683,6 +655,8 @@
             <!-- Controles de Usuário (Visível apenas se logado) -->
             <div id="user-area" class="user-controls hidden">
                 <div id="cloud-status" class="cloud-status">☁️ Conectado</div>
+                <span id="license-display" class="license-info">Licença: Verificando...</span>
+                <button id="btn-add-credits" class="btn-license">🔑 Créditos</button>
                 <span id="user-welcome" class="welcome-msg">Olá, Usuário</span>
                 <button id="btn-logout" class="btn-logout">Sair</button>
             </div>
@@ -930,6 +904,13 @@
         </div>
     </div>
 
+    <!-- RODAPÉ -->
+    <footer>
+        <p>© 2024 Calculadora Financeira PME. Todos os direitos reservados.</p>
+        <p>Apoie este projeto: <button id="btn-donate" class="btn-donate">Fazer Doação PIX</button></p>
+        <p><a href="http://www.websitelog.com.br" target="_blank">www.websitelog.com.br</a></p>
+    </footer>
+
     <!-- ======================= -->
     <!--   MODAL DE DETALHES     -->
     <!-- ======================= -->
@@ -951,9 +932,40 @@
             </div>
         </div>
     </div>
+
+    <!-- ======================= -->
+    <!--   MODAL DE LICENÇA      -->
+    <!-- ======================= -->
+    <div id="license-modal" class="modal-overlay">
+        <div class="modal-content" style="text-align: center;">
+            <div class="modal-header">
+                <h3>Gerenciar Créditos</h3>
+                <button id="license-modal-close" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Seus créditos expiraram ou você deseja adicionar mais dias.</p>
+                <div style="margin: 20px 0; border: 1px solid #ddd; padding: 15px; border-radius: 8px; background: #f9f9f9;">
+                    <p><strong>Passo 1:</strong> Gere o código de solicitação abaixo:</p>
+                    <button id="btn-generate-code" class="btn btn-secondary">Gerar Código</button>
+                    <div id="random-code-display" class="lock-code-display hidden"></div>
+                </div>
+                
+                <div style="margin: 20px 0; border: 1px solid #ddd; padding: 15px; border-radius: 8px; background: #f9f9f9;">
+                    <p><strong>Passo 2:</strong> Insira a Contra-Senha (Formato: CODIGO-DIAS):</p>
+                    <input type="text" id="unlock-code-input" placeholder="Ex: 2971-30" style="padding: 10px; width: 80%; font-size: 1.1rem; text-align: center;">
+                    <button id="btn-validate-code" class="btn btn-primary" style="margin-top: 10px;">Liberar Acesso</button>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <!-- JavaScript Integrado -->
     <script>
+        // --- CONSTANTES DE SEGURANÇA ---
+        const CONST_ADD = 13;
+        const CONST_MULT = 9;
+        const CONST_BASE = 1954;
+
         // CONFIGURAÇÃO FIREBASE
         const firebaseConfig = {
           apiKey: "AIzaSyDWwDLl34BLd1mYLSniJ8ucDTeaj4IX_2s",
@@ -985,6 +997,19 @@
             const userWelcome = document.getElementById('user-welcome');
             const btnLogout = document.getElementById('btn-logout');
             const cloudStatus = document.getElementById('cloud-status');
+            const licenseDisplay = document.getElementById('license-display');
+            const btnAddCredits = document.getElementById('btn-add-credits');
+            const btnDonate = document.getElementById('btn-donate');
+
+            // License Modal Elements
+            const licenseModal = document.getElementById('license-modal');
+            const licenseModalClose = document.getElementById('license-modal-close');
+            const btnGenerateCode = document.getElementById('btn-generate-code');
+            const randomCodeDisplay = document.getElementById('random-code-display');
+            const unlockInput = document.getElementById('unlock-code-input');
+            const btnValidateCode = document.getElementById('btn-validate-code');
+
+            let currentRandomNumber = 0;
 
             // Elementos das Views de Auth
             const viewLogin = document.getElementById('login-view');
@@ -1001,12 +1026,19 @@
             document.getElementById('btn-do-login').addEventListener('click', handleLogin);
             document.getElementById('btn-do-register').addEventListener('click', handleRegister);
             document.getElementById('btn-do-forgot').addEventListener('click', handleForgotPass);
-            // Botão Google
             document.getElementById('btn-google-login').addEventListener('click', handleGoogleLogin);
             
             btnLogout.addEventListener('click', handleLogout);
+            btnAddCredits.addEventListener('click', openLicenseModal);
+            btnDonate.addEventListener('click', handleDonation);
 
-            let currentUserEmail = null; // Para uso no salvamento de dados
+            // License Modal Events
+            licenseModalClose.addEventListener('click', () => licenseModal.classList.remove('active'));
+            btnGenerateCode.addEventListener('click', generateChallenge);
+            btnValidateCode.addEventListener('click', verifyUnlockCode);
+
+            let currentUserEmail = null; 
+            let currentUserData = null; // Armazena dados completos incluindo licença
 
             // Verificar sessão existente (Local)
             checkSession();
@@ -1015,13 +1047,14 @@
             if (auth) {
                 auth.onAuthStateChanged(function(user) {
                     if (user) {
-                        // Se usuário logado no Firebase
                         const appUser = {
                             name: user.displayName || user.email.split('@')[0],
                             email: user.email,
                             pass: 'google-auth'
                         };
-                        showApp(appUser);
+                        // Ao logar com Google, verifica se já tem dados para validar licença
+                        // Se não tiver (primeiro acesso), cria estrutura inicial
+                        checkAndCreateUserStructure(appUser);
                     } else {
                         const loggedUser = sessionStorage.getItem('pme_logged_user');
                         if (!loggedUser) {
@@ -1042,23 +1075,175 @@
                 const loggedUser = sessionStorage.getItem('pme_logged_user');
                 if (loggedUser) {
                     const user = JSON.parse(loggedUser);
-                    showApp(user);
+                    // Para usuários locais, precisamos carregar os dados do localStorage para checar a licença
+                    const usersDb = getUsersDb();
+                    const fullUser = usersDb.find(u => u.email === user.email);
+                    
+                    if (fullUser) {
+                        handleAppStart(fullUser);
+                    } else {
+                        // Fallback se algo estiver corrompido
+                        handleAppStart(user); 
+                    }
                 }
             }
 
-            function showApp(user) {
+            // Função Central para iniciar o app após login (Local ou Firebase)
+            function checkAndCreateUserStructure(user) {
+                if (db) {
+                    // Verifica se existe no Firestore
+                    db.collection('user_data').doc(user.email).get().then((doc) => {
+                        if (doc.exists) {
+                            // Usuário existe, usa dados da nuvem
+                            handleAppStart({ ...user, ...doc.data() });
+                        } else {
+                            // Novo usuário Firebase: Cria com 30 dias de licença
+                            const newUser = {
+                                ...user,
+                                license: {
+                                    validUntil: Date.now() + (30 * 24 * 60 * 60 * 1000)
+                                }
+                            };
+                            db.collection('user_data').doc(user.email).set(newUser).then(() => {
+                                handleAppStart(newUser);
+                            });
+                        }
+                    }).catch(err => {
+                        console.error("Erro ao verificar usuário nuvem:", err);
+                        handleAppStart(user); // Fallback offline
+                    });
+                } else {
+                    handleAppStart(user);
+                }
+            }
+
+            function handleAppStart(user) {
                 currentUserEmail = user.email;
+                currentUserData = user;
+
+                // Verifica Licença
+                checkLicenseValidity();
+
                 authSection.classList.add('hidden');
-                mainApp.classList.remove('hidden');
                 userArea.classList.remove('hidden');
                 userWelcome.textContent = `Olá, ${user.name}`;
                 
-                // Carregar dados salvos ao iniciar
+                // Carregar dados salvos do formulário
                 loadUserData(user.email);
+            }
+
+            function checkLicenseValidity() {
+                const now = Date.now();
+                let validUntil = 0;
+
+                // Tenta pegar do objeto user atual (memoria)
+                if (currentUserData && currentUserData.license && currentUserData.license.validUntil) {
+                    validUntil = currentUserData.license.validUntil;
+                } else {
+                    // Se não tiver estrutura de licença (usuário legado ou erro), dá 30 dias e salva
+                    validUntil = now + (30 * 24 * 60 * 60 * 1000);
+                    updateUserLicense(validUntil);
+                }
+
+                const daysLeft = Math.ceil((validUntil - now) / (1000 * 60 * 60 * 24));
+
+                if (daysLeft > 0) {
+                    licenseDisplay.textContent = `Licença: ${daysLeft} dias restantes`;
+                    licenseDisplay.style.color = 'white';
+                    mainApp.classList.remove('hidden');
+                } else {
+                    licenseDisplay.textContent = `Licença: EXPIRADA`;
+                    licenseDisplay.style.color = '#ff9999';
+                    mainApp.classList.add('hidden'); // Bloqueia acesso ao app
+                    openLicenseModal(); // Abre modal de desbloqueio
+                }
+            }
+
+            function openLicenseModal() {
+                licenseModal.classList.add('active');
+                randomCodeDisplay.classList.add('hidden');
+                unlockInput.value = '';
+            }
+
+            function generateChallenge() {
+                // Gera número entre 100 e 1000
+                currentRandomNumber = Math.floor(Math.random() * 901) + 100;
+                randomCodeDisplay.textContent = currentRandomNumber;
+                randomCodeDisplay.classList.remove('hidden');
+            }
+
+            function verifyUnlockCode() {
+                const input = unlockInput.value.trim();
+                // Formato esperado: CALCULO-DIAS
+                const parts = input.split('-');
+                
+                if (parts.length !== 2) {
+                    alert("Formato inválido. Use: CÓDIGO-DIAS (Ex: 2971-30)");
+                    return;
+                }
+
+                const codeInput = parseInt(parts[0]);
+                const daysInput = parseInt(parts[1]);
+
+                // Validação: (Random + 13) * 9 + 1954
+                const expectedCode = (currentRandomNumber + CONST_ADD) * CONST_MULT + CONST_BASE;
+
+                if (codeInput === expectedCode) {
+                    // Sucesso
+                    const now = Date.now();
+                    const newValidUntil = now + (daysInput * 24 * 60 * 60 * 1000);
+                    
+                    updateUserLicense(newValidUntil);
+                    
+                    alert(`Sucesso! Licença renovada por ${daysInput} dias.`);
+                    licenseModal.classList.remove('active');
+                    checkLicenseValidity(); // Atualiza UI
+                } else {
+                    alert("Código de desbloqueio inválido.");
+                }
+            }
+
+            function updateUserLicense(newTimestamp) {
+                if (!currentUserData) return;
+
+                // Atualiza objeto em memória
+                if (!currentUserData.license) currentUserData.license = {};
+                currentUserData.license.validUntil = newTimestamp;
+
+                // Atualiza LocalStorage (se usuário local)
+                const users = getUsersDb();
+                const userIndex = users.findIndex(u => u.email === currentUserEmail);
+                if (userIndex >= 0) {
+                    users[userIndex].license = { validUntil: newTimestamp };
+                    saveUserDb(users);
+                }
+
+                // Atualiza Firestore (se conectado)
+                if (db) {
+                    db.collection('user_data').doc(currentUserEmail).set({
+                        license: { validUntil: newTimestamp }
+                    }, { merge: true }).catch(err => console.error("Erro ao salvar licença nuvem", err));
+                }
+            }
+
+            function handleDonation() {
+                const pixKey = "b4648948-d0a8-4402-81f4-8a4047fcf4e5";
+                const message = `Gostou do App? Ajude a mantê-lo!\n\nChave PIX Aleatória:\n${pixKey}\n\nSugestão de valores: R$ 7,00, R$ 13,00, R$ 17,00.`;
+                
+                // Cria um input temporário para copiar
+                const tempInput = document.createElement("input");
+                tempInput.value = pixKey;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand("copy");
+                document.body.removeChild(tempInput);
+
+                alert(message + "\n\n(Chave PIX copiada para a área de transferência!)");
             }
 
             function showAuth() {
                 currentUserEmail = null;
+                currentUserData = null;
                 authSection.classList.remove('hidden');
                 mainApp.classList.add('hidden');
                 userArea.classList.add('hidden');
@@ -1090,9 +1275,19 @@
                     return;
                 }
 
-                users.push({ name, email, pass });
+                // Novo usuário local ganha 30 dias
+                const newUser = { 
+                    name, 
+                    email, 
+                    pass,
+                    license: {
+                        validUntil: Date.now() + (30 * 24 * 60 * 60 * 1000)
+                    }
+                };
+
+                users.push(newUser);
                 saveUserDb(users);
-                alert("Conta criada com sucesso! Faça login.");
+                alert("Conta criada com sucesso! Você ganhou 30 dias de acesso.");
                 
                 document.getElementById('reg-name').value = '';
                 document.getElementById('reg-email').value = '';
@@ -1115,7 +1310,7 @@
 
                 if (user) {
                     sessionStorage.setItem('pme_logged_user', JSON.stringify(user));
-                    showApp(user);
+                    handleAppStart(user);
                     document.getElementById('login-email').value = '';
                     document.getElementById('login-pass').value = '';
                 } else {
@@ -1131,6 +1326,7 @@
                 auth.signInWithPopup(googleProvider)
                     .then((result) => {
                         console.log("Logado com Google:", result.user);
+                        // Lógica tratada no onAuthStateChanged
                     }).catch((error) => {
                         console.error(error);
                         alert("Erro ao entrar com Google: " + error.message);
@@ -1170,22 +1366,19 @@
                 }
             }
 
-            // --- SISTEMA DE SALVAMENTO NA NUVEM/LOCAL (NOVA FUNCIONALIDADE) ---
-            
-            // Função para salvar dados
+            // --- SISTEMA DE SALVAMENTO ---
             function saveUserData(email) {
                 if (!email) return;
                 
                 const inputs = getFormInputs();
                 const dataToSave = JSON.stringify(inputs);
                 
-                // 1. Salva Local (Backup offline imediato)
                 localStorage.setItem(`pme_autosave_${email}`, dataToSave);
                 updateCloudStatus("Salvando...", "orange");
 
-                // 2. Salva na Nuvem (Firebase)
                 if (db) {
-                    db.collection('user_data').doc(email).set(inputs)
+                    // Salva dados do form mas preserva licença existente
+                    db.collection('user_data').doc(email).set(inputs, { merge: true })
                     .then(() => {
                         updateCloudStatus("☁️ Salvo na Nuvem", "#28a745");
                     })
@@ -1198,19 +1391,16 @@
                 }
             }
 
-            // Função para carregar dados
             function loadUserData(email) {
                 if (!email) return;
                 updateCloudStatus("Carregando...", "orange");
 
-                // Tenta carregar da nuvem primeiro
                 if (db) {
                     db.collection('user_data').doc(email).get().then((doc) => {
                         if (doc.exists) {
                             populateForm(doc.data());
                             updateCloudStatus("☁️ Sincronizado", "#28a745");
                         } else {
-                            // Se não tem na nuvem, tenta local
                             loadLocalData(email);
                         }
                     }).catch((error) => {
@@ -1238,7 +1428,9 @@
             }
 
             function populateForm(data) {
+                // Filtra apenas campos do formulário, ignora licença
                 for (const [key, value] of Object.entries(data)) {
+                    if (key === 'license') continue;
                     const input = document.getElementById(key);
                     if (input) {
                         input.value = value;
@@ -1253,7 +1445,6 @@
                 }
             }
 
-            // Auto-Save Trigger (Debounce)
             let saveTimeout;
             const formInputs = form.querySelectorAll('input');
             formInputs.forEach(input => {
@@ -1261,7 +1452,7 @@
                     clearTimeout(saveTimeout);
                     saveTimeout = setTimeout(() => {
                         saveUserData(currentUserEmail);
-                    }, 1000); // Salva 1s após parar de digitar
+                    }, 1000);
                 });
             });
 
@@ -1726,25 +1917,27 @@
             btnBackup.addEventListener('click', backupData);
             btnRestoreTrigger.addEventListener('click', triggerRestore);
 
-            // --- Função Demo Data (Exemplo 80k) ---
+            // --- Função Demo Data (Exemplo 80k - CORRIGIDO) ---
             btnDemoData.addEventListener('click', () => {
                 if(confirm('Deseja preencher o formulário com dados de exemplo (Faturamento ~R$ 80k)? Isso substituirá os dados atuais.')) {
-                    document.getElementById('faturamentoBruto').value = 80000;
-                    document.getElementById('custosVariaveis').value = 36000; // ~45%
-                    document.getElementById('custosFixos').value = 22000;     // ~27%
-                    document.getElementById('numeroVendas').value = 650;      // Ticket ~123
-                    document.getElementById('impostos').value = 5500;         // ~7% sobre a operação
-                    
-                    document.getElementById('ativosTotais').value = 120000;
-                    document.getElementById('patrimonioLiquido').value = 70000;
-                    document.getElementById('ativosCirculantes').value = 45000;
-                    document.getElementById('passivosCirculantes').value = 25000;
-                    
-                    document.getElementById('investimentoInicial').value = 90000;
+                    const demoValues = {
+                        'faturamentoBruto': 80000,
+                        'custosVariaveis': 36000,
+                        'custosFixos': 22000,
+                        'numeroVendas': 650,
+                        'impostos': 5500,
+                        'ativosTotais': 120000,
+                        'patrimonioLiquido': 70000,
+                        'ativosCirculantes': 45000,
+                        'passivosCirculantes': 25000,
+                        'investimentoInicial': 90000
+                    };
+
+                    populateForm(demoValues);
                     
                     // Remove alertas visuais de erro se houver
                     validateForm();
-                    // Salva automaticamente o exemplo
+                    // Salva automaticamente o exemplo e força o evento input para update visual
                     saveUserData(currentUserEmail);
                 }
             });
@@ -2016,3 +2209,4 @@
     </script>
 </body>
 </html>
+```
