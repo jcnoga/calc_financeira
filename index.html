@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calculadora Financeira para PMEs</title>
     
-    <!-- FIREBASE SDKs (Adicionado) -->
+    <!-- FIREBASE SDKs (Atualizado com Firestore) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 
     <!-- CSS Integrado -->
     <style>
@@ -74,6 +75,18 @@
         .welcome-msg {
             font-weight: 600;
             font-size: 0.9rem;
+        }
+
+        /* Indicador de Status da Nuvem */
+        .cloud-status {
+            font-size: 0.8rem;
+            background: rgba(0,0,0,0.2);
+            padding: 2px 8px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-right: 10px;
         }
 
         .btn-logout {
@@ -669,6 +682,7 @@
             </div>
             <!-- Controles de Usuário (Visível apenas se logado) -->
             <div id="user-area" class="user-controls hidden">
+                <div id="cloud-status" class="cloud-status">☁️ Conectado</div>
                 <span id="user-welcome" class="welcome-msg">Olá, Usuário</span>
                 <button id="btn-logout" class="btn-logout">Sair</button>
             </div>
@@ -940,7 +954,7 @@
     
     <!-- JavaScript Integrado -->
     <script>
-        // CONFIGURAÇÃO FIREBASE (Adicionado)
+        // CONFIGURAÇÃO FIREBASE
         const firebaseConfig = {
           apiKey: "AIzaSyDWwDLl34BLd1mYLSniJ8ucDTeaj4IX_2s",
           authDomain: "calc-financeira.firebaseapp.com",
@@ -952,10 +966,11 @@
         };
 
         // Inicializa Firebase (Se disponível)
-        let auth, googleProvider;
+        let auth, googleProvider, db;
         try {
             firebase.initializeApp(firebaseConfig);
             auth = firebase.auth();
+            db = firebase.firestore();
             googleProvider = new firebase.auth.GoogleAuthProvider();
         } catch (e) {
             console.error("Erro ao inicializar Firebase", e);
@@ -969,6 +984,7 @@
             const userArea = document.getElementById('user-area');
             const userWelcome = document.getElementById('user-welcome');
             const btnLogout = document.getElementById('btn-logout');
+            const cloudStatus = document.getElementById('cloud-status');
 
             // Elementos das Views de Auth
             const viewLogin = document.getElementById('login-view');
@@ -985,20 +1001,21 @@
             document.getElementById('btn-do-login').addEventListener('click', handleLogin);
             document.getElementById('btn-do-register').addEventListener('click', handleRegister);
             document.getElementById('btn-do-forgot').addEventListener('click', handleForgotPass);
-            // Botão Google (Novo)
+            // Botão Google
             document.getElementById('btn-google-login').addEventListener('click', handleGoogleLogin);
             
             btnLogout.addEventListener('click', handleLogout);
 
+            let currentUserEmail = null; // Para uso no salvamento de dados
+
             // Verificar sessão existente (Local)
             checkSession();
 
-            // Listener de estado do Firebase (Nova funcionalidade de robustez)
+            // Listener de estado do Firebase
             if (auth) {
                 auth.onAuthStateChanged(function(user) {
                     if (user) {
-                        // Se usuário logado no Firebase, mostra o app
-                        // Mapeia usuário do Firebase para o formato do app
+                        // Se usuário logado no Firebase
                         const appUser = {
                             name: user.displayName || user.email.split('@')[0],
                             email: user.email,
@@ -1006,8 +1023,6 @@
                         };
                         showApp(appUser);
                     } else {
-                        // Se não houver usuário Firebase, verifica sessão local
-                        // Se não houver sessão local, mantém na tela de login (comportamento padrão)
                         const loggedUser = sessionStorage.getItem('pme_logged_user');
                         if (!loggedUser) {
                             showAuth();
@@ -1029,17 +1044,21 @@
                     const user = JSON.parse(loggedUser);
                     showApp(user);
                 }
-                // Se não tiver local, o listener do Firebase vai tratar
             }
 
             function showApp(user) {
+                currentUserEmail = user.email;
                 authSection.classList.add('hidden');
                 mainApp.classList.remove('hidden');
                 userArea.classList.remove('hidden');
                 userWelcome.textContent = `Olá, ${user.name}`;
+                
+                // Carregar dados salvos ao iniciar
+                loadUserData(user.email);
             }
 
             function showAuth() {
+                currentUserEmail = null;
                 authSection.classList.remove('hidden');
                 mainApp.classList.add('hidden');
                 userArea.classList.add('hidden');
@@ -1075,7 +1094,6 @@
                 saveUserDb(users);
                 alert("Conta criada com sucesso! Faça login.");
                 
-                // Limpar campos
                 document.getElementById('reg-name').value = '';
                 document.getElementById('reg-email').value = '';
                 document.getElementById('reg-pass').value = '';
@@ -1098,7 +1116,6 @@
                 if (user) {
                     sessionStorage.setItem('pme_logged_user', JSON.stringify(user));
                     showApp(user);
-                    // Limpar campos
                     document.getElementById('login-email').value = '';
                     document.getElementById('login-pass').value = '';
                 } else {
@@ -1113,7 +1130,6 @@
                 }
                 auth.signInWithPopup(googleProvider)
                     .then((result) => {
-                        // O onAuthStateChanged vai cuidar da transição de tela
                         console.log("Logado com Google:", result.user);
                     }).catch((error) => {
                         console.error(error);
@@ -1127,12 +1143,6 @@
                     alert("Informe seu e-mail.");
                     return;
                 }
-                
-                // Simulação de envio
-                const users = getUsersDb();
-                const exists = users.find(u => u.email === email);
-                
-                // Se Firebase estiver ativo, tenta enviar reset real também
                 if (auth) {
                     auth.sendPasswordResetEmail(email)
                         .then(() => {
@@ -1140,7 +1150,6 @@
                              switchAuthView(viewLogin);
                         })
                         .catch((error) => {
-                            // Se falhar no firebase (ex: usuário não existe lá, mas existe localmente), cai no fallback simulado
                             alert(`Se o e-mail ${email} estiver cadastrado, você receberá um link de recuperação em instantes.`);
                             switchAuthView(viewLogin);
                         });
@@ -1161,11 +1170,105 @@
                 }
             }
 
+            // --- SISTEMA DE SALVAMENTO NA NUVEM/LOCAL (NOVA FUNCIONALIDADE) ---
+            
+            // Função para salvar dados
+            function saveUserData(email) {
+                if (!email) return;
+                
+                const inputs = getFormInputs();
+                const dataToSave = JSON.stringify(inputs);
+                
+                // 1. Salva Local (Backup offline imediato)
+                localStorage.setItem(`pme_autosave_${email}`, dataToSave);
+                updateCloudStatus("Salvando...", "orange");
+
+                // 2. Salva na Nuvem (Firebase)
+                if (db) {
+                    db.collection('user_data').doc(email).set(inputs)
+                    .then(() => {
+                        updateCloudStatus("☁️ Salvo na Nuvem", "#28a745");
+                    })
+                    .catch((error) => {
+                        console.error("Erro ao salvar na nuvem:", error);
+                        updateCloudStatus("💾 Salvo Local (Offline)", "#6c757d");
+                    });
+                } else {
+                    updateCloudStatus("💾 Salvo Local", "#6c757d");
+                }
+            }
+
+            // Função para carregar dados
+            function loadUserData(email) {
+                if (!email) return;
+                updateCloudStatus("Carregando...", "orange");
+
+                // Tenta carregar da nuvem primeiro
+                if (db) {
+                    db.collection('user_data').doc(email).get().then((doc) => {
+                        if (doc.exists) {
+                            populateForm(doc.data());
+                            updateCloudStatus("☁️ Sincronizado", "#28a745");
+                        } else {
+                            // Se não tem na nuvem, tenta local
+                            loadLocalData(email);
+                        }
+                    }).catch((error) => {
+                        console.error("Erro ao carregar da nuvem:", error);
+                        loadLocalData(email);
+                    });
+                } else {
+                    loadLocalData(email);
+                }
+            }
+
+            function loadLocalData(email) {
+                const localData = localStorage.getItem(`pme_autosave_${email}`);
+                if (localData) {
+                    try {
+                        const inputs = JSON.parse(localData);
+                        populateForm(inputs);
+                        updateCloudStatus("💾 Carregado Local", "#6c757d");
+                    } catch (e) {
+                        console.error("Erro ao ler backup local", e);
+                    }
+                } else {
+                    updateCloudStatus("Pronto", "#28a745");
+                }
+            }
+
+            function populateForm(data) {
+                for (const [key, value] of Object.entries(data)) {
+                    const input = document.getElementById(key);
+                    if (input) {
+                        input.value = value;
+                    }
+                }
+            }
+
+            function updateCloudStatus(text, color) {
+                if (cloudStatus) {
+                    cloudStatus.textContent = text;
+                    cloudStatus.style.borderLeft = `3px solid ${color}`;
+                }
+            }
+
+            // Auto-Save Trigger (Debounce)
+            let saveTimeout;
+            const formInputs = form.querySelectorAll('input');
+            formInputs.forEach(input => {
+                input.addEventListener('input', () => {
+                    clearTimeout(saveTimeout);
+                    saveTimeout = setTimeout(() => {
+                        saveUserData(currentUserEmail);
+                    }, 1000); // Salva 1s após parar de digitar
+                });
+            });
+
 
             // --- Seletores do DOM da Aplicação ---
             const tabButtons = document.querySelectorAll('.app-nav button');
             const tabSections = document.querySelectorAll('.app-section');
-            const form = document.getElementById('financial-form');
             const resultsWrapper = document.getElementById('results-wrapper');
             
             // Modal Elements
@@ -1187,7 +1290,7 @@
             const btnBackup = document.getElementById('btn-backup');
             const btnRestoreTrigger = document.getElementById('btn-restore-trigger');
             const fileRestoreInput = document.getElementById('file-restore');
-            const btnDemoData = document.getElementById('btn-demo-data'); // Botão Demo
+            const btnDemoData = document.getElementById('btn-demo-data');
 
             let calculatedResults = []; 
             
@@ -1605,12 +1708,8 @@
                         const data = JSON.parse(e.target.result);
                         
                         // Popula os campos
-                        for (const [key, value] of Object.entries(data)) {
-                            const input = document.getElementById(key);
-                            if (input) {
-                                input.value = value;
-                            }
-                        }
+                        populateForm(data);
+                        saveUserData(currentUserEmail); // Salva o restore na nuvem também
                         
                         alert("Dados restaurados com sucesso! Clique em 'Calcular' para ver os resultados.");
                         validateForm(); // Remove erros visuais se houver
@@ -1645,6 +1744,8 @@
                     
                     // Remove alertas visuais de erro se houver
                     validateForm();
+                    // Salva automaticamente o exemplo
+                    saveUserData(currentUserEmail);
                 }
             });
 
@@ -1657,6 +1758,7 @@
                     calculatedResults = calculateAllIndicators(inputs);
                     displayResults(calculatedResults);
                     switchTab('results-section');
+                    saveUserData(currentUserEmail); // Salva explicitamente ao calcular
                 } else {
                     alert('Por favor, preencha todos os campos obrigatórios com valores válidos (positivos).');
                 }
