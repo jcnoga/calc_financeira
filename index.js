@@ -63,6 +63,407 @@ document.addEventListener('DOMContentLoaded', () => {
     let autoSaveTimer = null;
     let isSaving = false;
     
+    // Funções do Sistema de Recuperação e Autosalvamento (Atualizado para Cloud + Local)
+    function initializeAutoSave() {
+        // Carrega dados salvos automaticamente (verifica nuvem e local)
+        loadAutoSavedData();
+        
+        // Configura o salvamento automático periódico
+        autoSaveTimer = setInterval(saveAutoData, AUTO_SAVE_INTERVAL);
+        
+        // Salva automaticamente quando o usuário sai da página
+        window.addEventListener('beforeunload', saveAutoData);
+        
+        // Monitora alterações nos campos
+        setupInputMonitoring();
+        
+        // Atualiza o status do autosalvamento
+        updateAutoSaveStatus('saved');
+    }
+    
+    function setupInputMonitoring() {
+        const inputs = document.querySelectorAll('#financial-form input');
+        inputs.forEach(input => {
+            input.addEventListener('input', () => {
+                updateAutoSaveStatus('saving');
+                // Salva após 1 segundo de inatividade (debounce)
+                clearTimeout(window.inputDebounceTimer);
+                window.inputDebounceTimer = setTimeout(() => {
+                    saveAutoData();
+                }, 1000);
+            });
+        });
+    }
+    
+    // Salva dados no Local Storage E na Nuvem
+    function saveAutoData() {
+        if (isSaving) return;
+        
+        isSaving = true;
+        updateAutoSaveStatus('saving');
+        
+        try {
+            const inputs = getFormInputs();
+            const saveData = {
+                data: inputs,
+                timestamp: new Date().toISOString(),
+                userId: getCurrentUserId()
+            };
+            
+            // 1. Salvar Localmente (Mantido)
+            localStorage.setItem(AUTO_SAVE_KEY, JSON.stringify(saveData));
+            localStorage.setItem(LAST_SESSION_KEY, new Date().toISOString());
+            
+            // 2. Salvar na Nuvem (Novo)
+            if (auth && auth.currentUser) {
+                db.collection('users').doc(auth.currentUser.uid).set({
+                    financialData: inputs,
+                    lastModified: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true }).then(() => {
+                    console.log("Dados sincronizados com a nuvem.");
+                }).catch((error) => {
+                    console.error("Erro ao salvar na nuvem:", error);
+                });
+            }
+
+            setTimeout(() => {
+                isSaving = false;
+                updateAutoSaveStatus('saved');
+            }, 500);
+            
+            return true;
+        } catch (error) {
+            console.error('Erro ao salvar automaticamente:', error);
+            isSaving = false;
+            updateAutoSaveStatus('error');
+            return false;
+        }
+    }
+    
+    // Carrega dados. Prioriza Cloud no login inicial.
+    function loadAutoSavedData() {
+        try {
+            // Se estiver logado, tenta pegar da nuvem primeiro
+            if (auth && auth.currentUser) {
+                db.collection('users').doc(auth.currentUser.uid).get().then((doc) => {
+                    if (doc.exists) {
+                        const userData = doc.data();
+                        
+                        // Sync de Licença (Nuvem -> Local)
+                        if (userData.license) {
+                            localStorage.setItem('pme_calculator_license', JSON.stringify(userData.license));
+                            checkLicenseExpiry(); // Revalida visualmente
+                        }
+
+                        // Sync de Dados Financeiros
+                        if (userData.financialData && Object.keys(userData.financialData).length > 0) {
+                            restoreAutoSavedData(userData.financialData, false); // Restaura silenciosamente
+                            console.log("Dados carregados da nuvem.");
+                            return; // Se achou na nuvem, não precisa olhar local storage agora
+                        }
+                    }
+                    // Fallback para local se nuvem estiver vazia
+                    checkLocalData();
+                }).catch((err) => {
+                    console.error("Erro ao buscar dados na nuvem:", err);
+                    checkLocalData();
+                });
+            } else {
+                checkLocalData();
+            }
+        } catch (error) {
+            console.error('Erro ao carregar dados salvos:', error);
+        }
+    }
+
+    function checkLocalData() {
+        const savedData = localStorage.getItem(AUTO_SAVE_KEY);
+        const lastSession = localStorage.getItem(LAST_SESSION_KEY);
+        
+        if (savedData && lastSession) {
+            const data = JSON.parse(savedData);
+            const lastSessionDate = new Date(lastSession);
+            const now = new Date();
+            const hoursDiff = Math.abs(now - lastSessionDate) / 36e5; 
+            
+            if (hoursDiff < 24 && data.userId === getCurrentUserId()) {
+                showRecoveryNotice(data.data);
+            }
+        }
+    }
+    
+    function showRecoveryNotice(data) {
+        recoveryMessage.textContent = 'Dados não salvos foram recuperados da sua última sessão. Clique aqui para restaurar.';
+        recoveryNotice.classList.remove('hidden');
+        
+        recoveryNotice.addEventListener('click', (e) => {
+            if (e.target !== closeRecoveryNotice) {
+                restoreAutoSavedData(data, true);
+                recoveryNotice.classList.add('hidden');
+            }
+        });
+        
+        closeRecoveryNotice.addEventListener('click', (e) => {
+            e.stopPropagation();
+            recoveryNotice.classList.add('hidden');
+        });
+    }
+    
+    function restoreAutoSavedData(data, confirmAction = true) {
+        if (!confirmAction || confirm('Deseja restaurar os dados da sua última sessão?')) {
+            for (const [key, value] of Object.entries(data)) {
+                const input = document.getElementById(key);
+                if (input) {
+                    input.value = value;
+                }
+            }
+            if (confirmAction) alert('Dados restaurados com sucesso!');
+            // Atualiza UI de erro se houver
+            validateForm();
+        }
+    }
+    
+    function updateAutoSaveStatus(status) {
+        autoSaveStatus.className = 'auto-save-status';
+        autoSaveStatus.classList.add(status);
+        
+        switch(status) {
+            case 'saving':
+                saveStatusText.textContent = 'Salvando na nuvem...';
+                break;
+            case 'saved':
+                saveStatusText.textContent = 'Salvo e sincronizado';
+                break;
+            case 'error':
+                saveStatusText.textContent = 'Erro ao salvar';
+                break;
+            default:
+                saveStatusText.textContent = 'Autosalvamento ativo';
+        }
+    }
+    
+    function getCurrentUserId() {
+        if (auth && auth.currentUser) return auth.currentUser.email;
+        const loggedUser = sessionStorage.getItem('pme_logged_user');
+        if (loggedUser) {
+            const user = JSON.parse(loggedUser);
+            return user.email;
+        }
+        return 'anonymous';
+    }
+    
+    // Função para criar licença trial (Estrutura de dados)
+    function getTrialLicenseData(days = 30) {
+        const trialExpiryDate = new Date();
+        trialExpiryDate.setDate(trialExpiryDate.getDate() + days);
+        
+        return {
+            license: 'TRIAL-' + Math.random().toString(36).substr(2, 9),
+            activationDate: new Date().toISOString(),
+            expiryDate: trialExpiryDate.toISOString(),
+            days: days,
+            isTrial: true
+        };
+    }
+    
+    // Funções do Sistema de Licença
+    function generateRandomCode() {
+        return Math.floor(100 + Math.random() * 900); // Gera número entre 100 e 999
+    }
+    
+    function calculatePassword(code, days) {
+        const calculation = (code + LICENSE_CONSTANTS.ADD_VALUE) * LICENSE_CONSTANTS.MULTIPLIER + LICENSE_CONSTANTS.BASE_NUMBER;
+        return `${calculation}-${days}`;
+    }
+    
+    function validateLicenseFormat(licenseString) {
+        const parts = licenseString.split('-');
+        if (parts.length !== 2) return false;
+        
+        const [codePart, daysPart] = parts;
+        const code = parseInt(codePart);
+        const days = parseInt(daysPart);
+        
+        if (isNaN(code) || isNaN(days) || code <= 0 || days <= 0) return false;
+        
+        return { code, days };
+    }
+    
+    function validateLicense(licenseString, generatedCode) {
+        const validation = validateLicenseFormat(licenseString);
+        if (!validation) return false;
+        
+        const { code, days } = validation;
+        
+        // Verifica se a licença corresponde ao código gerado
+        const expectedLicense = calculatePassword(generatedCode, days);
+        return licenseString === expectedLicense ? { code, days } : false;
+    }
+    
+    function checkLicenseExpiry() {
+        const licenseData = localStorage.getItem('pme_calculator_license');
+        if (!licenseData) {
+            licenseStatus.textContent = 'Licença: Não validada';
+            btnCalculate.classList.add('btn-calculate-hidden');
+            return false;
+        }
+        
+        try {
+            const { expiryDate, isTrial } = JSON.parse(licenseData);
+            const now = new Date();
+            const expiry = new Date(expiryDate);
+            
+            if (now > expiry) {
+                licenseStatus.textContent = isTrial ? 'Licença: Trial Expirado' : 'Licença: Expirada';
+                btnCalculate.classList.add('btn-calculate-hidden');
+                showLicenseExpiredMessage();
+                return false;
+            } else {
+                const daysLeft = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+                licenseStatus.textContent = isTrial ? 
+                    `Licença: Trial (${daysLeft} dias restantes)` : 
+                    `Licença: Válida (${daysLeft} dias restantes)`;
+                btnCalculate.classList.remove('btn-calculate-hidden');
+                return true;
+            }
+        } catch (e) {
+            console.error('Erro ao verificar licença:', e);
+            licenseStatus.textContent = 'Licença: Inválida';
+            btnCalculate.classList.add('btn-calculate-hidden');
+            return false;
+        }
+    }
+    
+    function showLicenseExpiredMessage() {
+        // Mostra uma mensagem de alerta quando a licença expira
+        // alert('Sua licença expirou! Por favor, renove sua licença para continuar usando o aplicativo.');
+        // Comentado para não spammar alertas no load
+        
+        // Garante que o botão calcular está escondido
+        btnCalculate.classList.add('btn-calculate-hidden');
+    }
+    
+    // Inicializa verificação de licença
+    checkLicenseExpiry();
+    
+    // Event Listeners para Sistema de Licença
+    btnLicense.addEventListener('click', () => {
+        licenseModal.classList.add('active');
+        licenseInfo.classList.add('hidden');
+        licenseInput.value = '';
+    });
+    
+    btnGenerateCode.addEventListener('click', () => {
+        const randomCode = generateRandomCode();
+        licenseCodeInput.value = randomCode;
+        
+        // Informa o usuário sobre o formato
+        alert(`Código gerado: ${randomCode}\n\nEnvie este código no formato: xxxxx-yyy\nOnde xxxxx é o código calculado e yyy é o número de dias de crédito a liberar.\n\nExemplo: Para 30 dias, você receberá um código como: 139405-30`);
+    });
+    
+    btnActivateLicense.addEventListener('click', () => {
+        const licenseString = licenseInput.value.trim();
+        const generatedCode = parseInt(licenseCodeInput.value);
+        
+        if (!licenseString) {
+            alert('Por favor, insira o código de licença.');
+            return;
+        }
+        
+        if (!generatedCode || isNaN(generatedCode)) {
+            alert('Por favor, gere um código primeiro.');
+            return;
+        }
+        
+        // Valida o formato
+        const formatValidation = validateLicenseFormat(licenseString);
+        if (!formatValidation) {
+            alert('Formato inválido! Use o formato: xxxxx-yyy\nOnde xxxxx é o código e yyy são os dias.\nExemplo: 139405-30');
+            return;
+        }
+        
+        // Valida a licença
+        const validation = validateLicense(licenseString, generatedCode);
+        
+        if (!validation) {
+            alert('Licença inválida! Verifique se o código está correto.\n\nLembre-se: Envie o código no formato xxxxx-yyy\nOnde xxxxx é o resultado do cálculo e yyy são os dias.');
+            return;
+        }
+        
+        const { days } = validation;
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + days);
+        
+        const licenseData = {
+            license: licenseString,
+            activationDate: new Date().toISOString(),
+            expiryDate: expiryDate.toISOString(),
+            days: days,
+            isTrial: false
+        };
+        
+        // Salva local
+        localStorage.setItem('pme_calculator_license', JSON.stringify(licenseData));
+        
+        // Salva na Nuvem (Sync)
+        if (auth && auth.currentUser) {
+            db.collection('users').doc(auth.currentUser.uid).set({
+                license: licenseData
+            }, { merge: true });
+        }
+        
+        // Mostra informações da licença
+        licenseInfo.classList.remove('hidden');
+        licenseDetails.textContent = `Licença ativada com sucesso para ${days} dias.`;
+        licenseExpiry.textContent = `Expira em: ${expiryDate.toLocaleDateString()}`;
+        
+        // Atualiza status no rodapé
+        checkLicenseExpiry();
+        
+        alert(`Licença ativada com sucesso! Seu acesso está liberado por ${days} dias.`);
+    });
+    
+    // Fechar modal de licença
+    document.querySelector('[data-modal="license"]').addEventListener('click', () => {
+        licenseModal.classList.remove('active');
+    });
+    
+    licenseModal.addEventListener('click', (e) => {
+        if (e.target === licenseModal) {
+            licenseModal.classList.remove('active');
+        }
+    });
+    
+    // Sistema de Doações
+    donationButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const amount = button.getAttribute('data-amount');
+            const message = `Para doar R$ ${amount}, use a seguinte chave PIX:\n\n${PIX_KEY}\n\nCopiado para a área de transferência!`;
+            
+            // Copia a chave PIX para a área de transferência
+            navigator.clipboard.writeText(PIX_KEY).then(() => {
+                alert(message);
+            }).catch(err => {
+                alert(`Para doar R$ ${amount}, use a seguinte chave PIX:\n\n${PIX_KEY}`);
+            });
+        });
+    });
+    
+    btnDonationOther.addEventListener('click', () => {
+        const customAmount = prompt('Digite o valor da doação (ex: 25.00):', '25.00');
+        if (customAmount && !isNaN(parseFloat(customAmount))) {
+            const message = `Para doar R$ ${customAmount}, use a seguinte chave PIX:\n\n${PIX_KEY}\n\nCopiado para a área de transferência!`;
+            
+            navigator.clipboard.writeText(PIX_KEY).then(() => {
+                alert(message);
+            }).catch(err => {
+                alert(`Para doar R$ ${customAmount}, use a seguinte chave PIX:\n\n${PIX_KEY}`);
+            });
+        }
+    });
+    
+    // --- FIM DAS NOVAS FUNCIONALIDADES ---
+
     // --- Gerenciamento de Autenticação ---
     const authSection = document.getElementById('auth-section');
     const mainApp = document.getElementById('main-application');
@@ -90,7 +491,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     btnLogout.addEventListener('click', handleLogout);
 
-    // Listener de estado do Firebase
+    // Verificar sessão existente (Local)
+    // checkSession(); // Removido para usar a lógica do Firebase como prioritária
+
+    // Listener de estado do Firebase (Nova funcionalidade de robustez)
     if (auth) {
         auth.onAuthStateChanged(function(user) {
             if (user) {
@@ -112,6 +516,216 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    function switchAuthView(viewToShow) {
+        viewLogin.classList.add('hidden');
+        viewRegister.classList.add('hidden');
+        viewForgot.classList.add('hidden');
+        viewToShow.classList.remove('hidden');
+    }
+
+    function showApp(user) {
+        authSection.classList.add('hidden');
+        mainApp.classList.remove('hidden');
+        userArea.classList.remove('hidden');
+        userWelcome.textContent = `Olá, ${user.name}`;
+        
+        // Carrega dados da nuvem e sincroniza
+        initializeAutoSave();
+        
+        // Verifica a licença ao mostrar o app
+        // checkLicenseExpiry é chamado dentro de loadAutoSavedData agora, após o sync
+        
+        // Limpa dados de autosalvamento de outros usuários
+        cleanupOldAutoSaveData(user.email);
+    }
+
+    function showAuth() {
+        authSection.classList.remove('hidden');
+        mainApp.classList.add('hidden');
+        userArea.classList.add('hidden');
+        switchAuthView(viewLogin);
+    }
+    
+    // Função legada mantida para não quebrar compatibilidade, mas não usada para auth principal
+    function getUsersDb() {
+        const users = localStorage.getItem('pme_calculator_users');
+        return users ? JSON.parse(users) : [];
+    }
+    // Função legada mantida
+    function saveUserDb(users) {
+        localStorage.setItem('pme_calculator_users', JSON.stringify(users));
+    }
+    
+    function cleanupOldAutoSaveData(currentUserEmail) {
+        try {
+            const savedData = localStorage.getItem(AUTO_SAVE_KEY);
+            if (savedData) {
+                const data = JSON.parse(savedData);
+                if (data.userId && data.userId !== currentUserEmail) {
+                    localStorage.removeItem(AUTO_SAVE_KEY);
+                    localStorage.removeItem(LAST_SESSION_KEY);
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao limpar dados antigos:', error);
+        }
+    }
+
+    // ATUALIZADO: Registro via Firebase + Criação de DB Cloud com Licença
+    function handleRegister() {
+        const name = document.getElementById('reg-name').value.trim();
+        const email = document.getElementById('reg-email').value.trim();
+        const pass = document.getElementById('reg-pass').value.trim();
+
+        if (!name || !email || !pass) {
+            alert("Por favor, preencha todos os campos.");
+            return;
+        }
+
+        if (!auth) {
+            alert("Erro: Firebase não configurado.");
+            return;
+        }
+
+        // Cria usuário na nuvem
+        auth.createUserWithEmailAndPassword(email, pass)
+            .then((userCredential) => {
+                const user = userCredential.user;
+                
+                // Atualiza perfil (nome)
+                user.updateProfile({
+                    displayName: name
+                });
+
+                // Cria Licença Trial de 30 dias
+                const trialData = getTrialLicenseData(30);
+                
+                // Salva dados iniciais no Firestore
+                db.collection('users').doc(user.uid).set({
+                    license: trialData,
+                    financialData: {}, // Começa vazio
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                }).then(() => {
+                    // Salva licença localmente também para acesso imediato
+                    localStorage.setItem('pme_calculator_license', JSON.stringify(trialData));
+                    alert("Conta criada com sucesso! Você recebeu 30 dias de acesso trial.");
+                    
+                    // Limpar campos
+                    document.getElementById('reg-name').value = '';
+                    document.getElementById('reg-email').value = '';
+                    document.getElementById('reg-pass').value = '';
+                });
+            })
+            .catch((error) => {
+                const errorCode = error.code;
+                const errorMessage = error.message;
+                if(errorCode === 'auth/email-already-in-use') {
+                    alert("Este e-mail já está cadastrado.");
+                } else {
+                    alert("Erro ao criar conta: " + errorMessage);
+                }
+            });
+    }
+
+    // ATUALIZADO: Login via Firebase
+    function handleLogin() {
+        const email = document.getElementById('login-email').value.trim();
+        const pass = document.getElementById('login-pass').value.trim();
+
+        if (!email || !pass) {
+            alert("Preencha e-mail e senha.");
+            return;
+        }
+
+        if (!auth) {
+            alert("Erro: Firebase não configurado.");
+            return;
+        }
+
+        auth.signInWithEmailAndPassword(email, pass)
+            .then((userCredential) => {
+                // O listener onAuthStateChanged cuidará da UI
+                console.log("Login realizado com sucesso.");
+                // Limpar campos
+                document.getElementById('login-email').value = '';
+                document.getElementById('login-pass').value = '';
+            })
+            .catch((error) => {
+                alert("E-mail ou senha incorretos.");
+                console.error(error);
+            });
+    }
+
+    function handleGoogleLogin() {
+        if (!auth) {
+            alert("Erro de configuração do Firebase.");
+            return;
+        }
+        auth.signInWithPopup(googleProvider)
+            .then((result) => {
+                const user = result.user;
+                // Verifica se o documento do usuário existe, se não, cria com trial
+                const userDocRef = db.collection('users').doc(user.uid);
+                
+                userDocRef.get().then((docSnapshot) => {
+                    if (!docSnapshot.exists) {
+                        // Usuário novo via Google: Dá licença Trial
+                        const trialData = getTrialLicenseData(30);
+                        userDocRef.set({
+                            license: trialData,
+                            financialData: {},
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        }).then(() => {
+                            localStorage.setItem('pme_calculator_license', JSON.stringify(trialData));
+                            alert("Bem-vindo! Você recebeu 30 dias de acesso trial.");
+                        });
+                    }
+                });
+            }).catch((error) => {
+                console.error(error);
+                alert("Erro ao entrar com Google: " + error.message);
+            });
+    }
+
+    function handleForgotPass() {
+        const email = document.getElementById('forgot-email').value.trim();
+        if (!email) {
+            alert("Informe seu e-mail.");
+            return;
+        }
+        
+        if (auth) {
+            auth.sendPasswordResetEmail(email)
+                .then(() => {
+                        alert(`E-mail de recuperação enviado para ${email}. Verifique sua caixa de entrada.`);
+                        switchAuthView(viewLogin);
+                })
+                .catch((error) => {
+                    alert(`Erro ao enviar email: ${error.message}`);
+                });
+        }
+    }
+
+    function handleLogout() {
+        // Salva dados antes de sair (Nuvem e Local)
+        saveAutoData();
+        
+        sessionStorage.removeItem('pme_logged_user');
+        if (auth) {
+            auth.signOut().then(() => {
+                showAuth();
+            });
+        } else {
+            showAuth();
+        }
+        
+        // Limpa o timer de autosalvamento
+        if (autoSaveTimer) {
+            clearInterval(autoSaveTimer);
+        }
+    }
+
 
     // --- Seletores do DOM da Aplicação ---
     const tabButtons = document.querySelectorAll('.app-nav button');
@@ -303,6 +917,7 @@ document.addEventListener('DOMContentLoaded', () => {
             name: 'Margem Operacional (%)',
             category: 'Lucratividade e Margens',
             icon: icons.lucratividade,
+            calculate: (i) => ((i.faturamentoBruto - i.custosVariaveis - i.custosFixos - i.faturamentoBruto) / i.faturamentoBruto) * 100, // Correção na fórmula original para cálculo percentual
             calculate: (i) => ((i.faturamentoBruto - i.custosVariaveis - i.custosFixos) / i.faturamentoBruto) * 100,
             format: (v) => `${v.toFixed(2)}%`,
             description: 'Percentual do faturamento que vira Lucro Operacional.',
@@ -479,499 +1094,7 @@ document.addEventListener('DOMContentLoaded', () => {
         },
     ];
 
-    // --- FUNÇÕES AUXILIARES ---
-
-    // Função para criar licença trial
-    function getTrialLicenseData(days = 30) {
-        const trialExpiryDate = new Date();
-        trialExpiryDate.setDate(trialExpiryDate.getDate() + days);
-        
-        return {
-            license: 'TRIAL-' + Math.random().toString(36).substr(2, 9),
-            activationDate: new Date().toISOString(),
-            expiryDate: trialExpiryDate.toISOString(),
-            days: days,
-            isTrial: true
-        };
-    }
-    
-    // Funções do Sistema de Licença
-    function generateRandomCode() {
-        return Math.floor(100 + Math.random() * 900); // Gera número entre 100 e 999
-    }
-    
-    function calculatePassword(code, days) {
-        const calculation = (code + LICENSE_CONSTANTS.ADD_VALUE) * LICENSE_CONSTANTS.MULTIPLIER + LICENSE_CONSTANTS.BASE_NUMBER;
-        return `${calculation}-${days}`;
-    }
-    
-    function validateLicenseFormat(licenseString) {
-        const parts = licenseString.split('-');
-        if (parts.length !== 2) return false;
-        
-        const [codePart, daysPart] = parts;
-        const code = parseInt(codePart);
-        const days = parseInt(daysPart);
-        
-        if (isNaN(code) || isNaN(days) || code <= 0 || days <= 0) return false;
-        
-        return { code, days };
-    }
-    
-    function validateLicense(licenseString, generatedCode) {
-        const validation = validateLicenseFormat(licenseString);
-        if (!validation) return false;
-        
-        const { code, days } = validation;
-        
-        // Verifica se a licença corresponde ao código gerado
-        const expectedLicense = calculatePassword(generatedCode, days);
-        return licenseString === expectedLicense ? { code, days } : false;
-    }
-    
-    function checkLicenseExpiry() {
-        const licenseData = localStorage.getItem('pme_calculator_license');
-        if (!licenseData) {
-            licenseStatus.textContent = 'Licença: Não validada';
-            btnCalculate.classList.add('btn-calculate-hidden');
-            return false;
-        }
-        
-        try {
-            const { expiryDate, isTrial } = JSON.parse(licenseData);
-            const now = new Date();
-            const expiry = new Date(expiryDate);
-            
-            if (now > expiry) {
-                licenseStatus.textContent = isTrial ? 'Licença: Trial Expirado' : 'Licença: Expirada';
-                btnCalculate.classList.add('btn-calculate-hidden');
-                showLicenseExpiredMessage();
-                return false;
-            } else {
-                const daysLeft = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
-                licenseStatus.textContent = isTrial ? 
-                    `Licença: Trial (${daysLeft} dias restantes)` : 
-                    `Licença: Válida (${daysLeft} dias restantes)`;
-                btnCalculate.classList.remove('btn-calculate-hidden');
-                return true;
-            }
-        } catch (e) {
-            console.error('Erro ao verificar licença:', e);
-            licenseStatus.textContent = 'Licença: Inválida';
-            btnCalculate.classList.add('btn-calculate-hidden');
-            return false;
-        }
-    }
-    
-    function showLicenseExpiredMessage() {
-        // Garante que o botão calcular está escondido
-        btnCalculate.classList.add('btn-calculate-hidden');
-    }
-    
-    // --- FUNÇÕES DO SISTEMA DE AUTENTICAÇÃO ---
-    
-    function switchAuthView(viewToShow) {
-        viewLogin.classList.add('hidden');
-        viewRegister.classList.add('hidden');
-        viewForgot.classList.add('hidden');
-        viewToShow.classList.remove('hidden');
-    }
-
-    function showApp(user) {
-        authSection.classList.add('hidden');
-        mainApp.classList.remove('hidden');
-        userArea.classList.remove('hidden');
-        userWelcome.textContent = `Olá, ${user.name}`;
-        
-        // Carrega dados da nuvem e sincroniza
-        initializeAutoSave();
-        
-        // Verifica a licença ao mostrar o app
-        // checkLicenseExpiry é chamado dentro de loadAutoSavedData agora, após o sync
-        
-        // Limpa dados de autosalvamento de outros usuários
-        cleanupOldAutoSaveData(user.email);
-    }
-
-    function showAuth() {
-        authSection.classList.remove('hidden');
-        mainApp.classList.add('hidden');
-        userArea.classList.add('hidden');
-        switchAuthView(viewLogin);
-    }
-    
-    // Função legada mantida para não quebrar compatibilidade
-    function getUsersDb() {
-        const users = localStorage.getItem('pme_calculator_users');
-        return users ? JSON.parse(users) : [];
-    }
-    
-    // Função legada mantida
-    function saveUserDb(users) {
-        localStorage.setItem('pme_calculator_users', JSON.stringify(users));
-    }
-    
-    function cleanupOldAutoSaveData(currentUserEmail) {
-        try {
-            const savedData = localStorage.getItem(AUTO_SAVE_KEY);
-            if (savedData) {
-                const data = JSON.parse(savedData);
-                if (data.userId && data.userId !== currentUserEmail) {
-                    localStorage.removeItem(AUTO_SAVE_KEY);
-                    localStorage.removeItem(LAST_SESSION_KEY);
-                }
-            }
-        } catch (error) {
-            console.error('Erro ao limpar dados antigos:', error);
-        }
-    }
-
-    // ATUALIZADO: Registro via Firebase + Criação de DB Cloud com Licença
-    function handleRegister() {
-        const name = document.getElementById('reg-name').value.trim();
-        const email = document.getElementById('reg-email').value.trim();
-        const pass = document.getElementById('reg-pass').value.trim();
-
-        if (!name || !email || !pass) {
-            alert("Por favor, preencha todos os campos.");
-            return;
-        }
-
-        if (!auth) {
-            alert("Erro: Firebase não configurado.");
-            return;
-        }
-
-        // Cria usuário na nuvem
-        auth.createUserWithEmailAndPassword(email, pass)
-            .then((userCredential) => {
-                const user = userCredential.user;
-                
-                // Atualiza perfil (nome)
-                user.updateProfile({
-                    displayName: name
-                });
-
-                // Cria Licença Trial de 30 dias
-                const trialData = getTrialLicenseData(30);
-                
-                // Salva dados iniciais no Firestore
-                db.collection('users').doc(user.uid).set({
-                    license: trialData,
-                    financialData: {}, // Começa vazio
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                }).then(() => {
-                    // Salva licença localmente também para acesso imediato
-                    localStorage.setItem('pme_calculator_license', JSON.stringify(trialData));
-                    alert("Conta criada com sucesso! Você recebeu 30 dias de acesso trial.");
-                    
-                    // Limpar campos
-                    document.getElementById('reg-name').value = '';
-                    document.getElementById('reg-email').value = '';
-                    document.getElementById('reg-pass').value = '';
-                });
-            })
-            .catch((error) => {
-                const errorCode = error.code;
-                const errorMessage = error.message;
-                if(errorCode === 'auth/email-already-in-use') {
-                    alert("Este e-mail já está cadastrado.");
-                } else {
-                    alert("Erro ao criar conta: " + errorMessage);
-                }
-            });
-    }
-
-    // ATUALIZADO: Login via Firebase
-    function handleLogin() {
-        const email = document.getElementById('login-email').value.trim();
-        const pass = document.getElementById('login-pass').value.trim();
-
-        if (!email || !pass) {
-            alert("Preencha e-mail e senha.");
-            return;
-        }
-
-        if (!auth) {
-            alert("Erro: Firebase não configurado.");
-            return;
-        }
-
-        auth.signInWithEmailAndPassword(email, pass)
-            .then((userCredential) => {
-                // O listener onAuthStateChanged cuidará da UI
-                console.log("Login realizado com sucesso.");
-                // Limpar campos
-                document.getElementById('login-email').value = '';
-                document.getElementById('login-pass').value = '';
-            })
-            .catch((error) => {
-                alert("E-mail ou senha incorretos.");
-                console.error(error);
-            });
-    }
-
-    function handleGoogleLogin() {
-        if (!auth) {
-            alert("Erro de configuração do Firebase.");
-            return;
-        }
-        auth.signInWithPopup(googleProvider)
-            .then((result) => {
-                const user = result.user;
-                // Verifica se o documento do usuário existe, se não, cria com trial
-                const userDocRef = db.collection('users').doc(user.uid);
-                
-                userDocRef.get().then((docSnapshot) => {
-                    if (!docSnapshot.exists) {
-                        // Usuário novo via Google: Dá licença Trial
-                        const trialData = getTrialLicenseData(30);
-                        userDocRef.set({
-                            license: trialData,
-                            financialData: {},
-                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                        }).then(() => {
-                            localStorage.setItem('pme_calculator_license', JSON.stringify(trialData));
-                            alert("Bem-vindo! Você recebeu 30 dias de acesso trial.");
-                        });
-                    }
-                });
-            }).catch((error) => {
-                console.error(error);
-                alert("Erro ao entrar com Google: " + error.message);
-            });
-    }
-
-    function handleForgotPass() {
-        const email = document.getElementById('forgot-email').value.trim();
-        if (!email) {
-            alert("Informe seu e-mail.");
-            return;
-        }
-        
-        if (auth) {
-            auth.sendPasswordResetEmail(email)
-                .then(() => {
-                     alert(`E-mail de recuperação enviado para ${email}. Verifique sua caixa de entrada.`);
-                     switchAuthView(viewLogin);
-                })
-                .catch((error) => {
-                    alert(`Erro ao enviar email: ${error.message}`);
-                });
-        }
-    }
-
-    function handleLogout() {
-        // Salva dados antes de sair (Nuvem e Local)
-        saveAutoData();
-        
-        sessionStorage.removeItem('pme_logged_user');
-        if (auth) {
-            auth.signOut().then(() => {
-                showAuth();
-            });
-        } else {
-            showAuth();
-        }
-        
-        // Limpa o timer de autosalvamento
-        if (autoSaveTimer) {
-            clearInterval(autoSaveTimer);
-        }
-    }
-
-    // --- FUNÇÕES DO SISTEMA DE AUTOSALVAMENTO ---
-    
-    function initializeAutoSave() {
-        // Carrega dados salvos automaticamente (verifica nuvem e local)
-        loadAutoSavedData();
-        
-        // Configura o salvamento automático periódico
-        autoSaveTimer = setInterval(saveAutoData, AUTO_SAVE_INTERVAL);
-        
-        // Salva automaticamente quando o usuário sai da página
-        window.addEventListener('beforeunload', saveAutoData);
-        
-        // Monitora alterações nos campos
-        setupInputMonitoring();
-        
-        // Atualiza o status do autosalvamento
-        updateAutoSaveStatus('saved');
-    }
-    
-    function setupInputMonitoring() {
-        const inputs = document.querySelectorAll('#financial-form input');
-        inputs.forEach(input => {
-            input.addEventListener('input', () => {
-                updateAutoSaveStatus('saving');
-                // Salva após 1 segundo de inatividade (debounce)
-                clearTimeout(window.inputDebounceTimer);
-                window.inputDebounceTimer = setTimeout(() => {
-                    saveAutoData();
-                }, 1000);
-            });
-        });
-    }
-    
-    // Salva dados no Local Storage E na Nuvem
-    function saveAutoData() {
-        if (isSaving) return;
-        
-        isSaving = true;
-        updateAutoSaveStatus('saving');
-        
-        try {
-            const inputs = getFormInputs();
-            const saveData = {
-                data: inputs,
-                timestamp: new Date().toISOString(),
-                userId: getCurrentUserId()
-            };
-            
-            // 1. Salvar Localmente
-            localStorage.setItem(AUTO_SAVE_KEY, JSON.stringify(saveData));
-            localStorage.setItem(LAST_SESSION_KEY, new Date().toISOString());
-            
-            // 2. Salvar na Nuvem
-            if (auth && auth.currentUser) {
-                db.collection('users').doc(auth.currentUser.uid).set({
-                    financialData: inputs,
-                    lastModified: firebase.firestore.FieldValue.serverTimestamp()
-                }, { merge: true }).then(() => {
-                    console.log("Dados sincronizados com a nuvem.");
-                }).catch((error) => {
-                    console.error("Erro ao salvar na nuvem:", error);
-                });
-            }
-
-            setTimeout(() => {
-                isSaving = false;
-                updateAutoSaveStatus('saved');
-            }, 500);
-            
-            return true;
-        } catch (error) {
-            console.error('Erro ao salvar automaticamente:', error);
-            isSaving = false;
-            updateAutoSaveStatus('error');
-            return false;
-        }
-    }
-    
-    // Carrega dados. Prioriza Cloud no login inicial.
-    function loadAutoSavedData() {
-        try {
-            // Se estiver logado, tenta pegar da nuvem primeiro
-            if (auth && auth.currentUser) {
-                db.collection('users').doc(auth.currentUser.uid).get().then((doc) => {
-                    if (doc.exists) {
-                        const userData = doc.data();
-                        
-                        // Sync de Licença (Nuvem -> Local)
-                        if (userData.license) {
-                            localStorage.setItem('pme_calculator_license', JSON.stringify(userData.license));
-                            checkLicenseExpiry(); // Revalida visualmente
-                        }
-
-                        // Sync de Dados Financeiros
-                        if (userData.financialData && Object.keys(userData.financialData).length > 0) {
-                            restoreAutoSavedData(userData.financialData, false); // Restaura silenciosamente
-                            console.log("Dados carregados da nuvem.");
-                            return; // Se achou na nuvem, não precisa olhar local storage agora
-                        }
-                    }
-                    // Fallback para local se nuvem estiver vazia
-                    checkLocalData();
-                }).catch((err) => {
-                    console.error("Erro ao buscar dados na nuvem:", err);
-                    checkLocalData();
-                });
-            } else {
-                checkLocalData();
-            }
-        } catch (error) {
-            console.error('Erro ao carregar dados salvos:', error);
-        }
-    }
-
-    function checkLocalData() {
-        const savedData = localStorage.getItem(AUTO_SAVE_KEY);
-        const lastSession = localStorage.getItem(LAST_SESSION_KEY);
-        
-        if (savedData && lastSession) {
-            const data = JSON.parse(savedData);
-            const lastSessionDate = new Date(lastSession);
-            const now = new Date();
-            const hoursDiff = Math.abs(now - lastSessionDate) / 36e5; 
-            
-            if (hoursDiff < 24 && data.userId === getCurrentUserId()) {
-                showRecoveryNotice(data.data);
-            }
-        }
-    }
-    
-    function showRecoveryNotice(data) {
-        recoveryMessage.textContent = 'Dados não salvos foram recuperados da sua última sessão. Clique aqui para restaurar.';
-        recoveryNotice.classList.remove('hidden');
-        
-        recoveryNotice.addEventListener('click', (e) => {
-            if (e.target !== closeRecoveryNotice) {
-                restoreAutoSavedData(data, true);
-                recoveryNotice.classList.add('hidden');
-            }
-        });
-        
-        closeRecoveryNotice.addEventListener('click', (e) => {
-            e.stopPropagation();
-            recoveryNotice.classList.add('hidden');
-        });
-    }
-    
-    function restoreAutoSavedData(data, confirmAction = true) {
-        if (!confirmAction || confirm('Deseja restaurar os dados da sua última sessão?')) {
-            for (const [key, value] of Object.entries(data)) {
-                const input = document.getElementById(key);
-                if (input) {
-                    input.value = value;
-                }
-            }
-            if (confirmAction) alert('Dados restaurados com sucesso!');
-            // Atualiza UI de erro se houver
-            validateForm();
-        }
-    }
-    
-    function updateAutoSaveStatus(status) {
-        autoSaveStatus.className = 'auto-save-status';
-        autoSaveStatus.classList.add(status);
-        
-        switch(status) {
-            case 'saving':
-                saveStatusText.textContent = 'Salvando na nuvem...';
-                break;
-            case 'saved':
-                saveStatusText.textContent = 'Salvo e sincronizado';
-                break;
-            case 'error':
-                saveStatusText.textContent = 'Erro ao salvar';
-                break;
-            default:
-                saveStatusText.textContent = 'Autosalvamento ativo';
-        }
-    }
-    
-    function getCurrentUserId() {
-        if (auth && auth.currentUser) return auth.currentUser.email;
-        const loggedUser = sessionStorage.getItem('pme_logged_user');
-        if (loggedUser) {
-            const user = JSON.parse(loggedUser);
-            return user.email;
-        }
-        return 'anonymous';
-    }
-
-    // --- FUNÇÕES DE NAVEGAÇÃO ---
-    
+    // --- Funções de Navegação ---
     function switchTab(tabId) {
         tabSections.forEach(section => {
             section.classList.remove('active');
@@ -988,8 +1111,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- FUNÇÕES DE VALIDAÇÃO ---
-    
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            switchTab(button.dataset.tab);
+        });
+    });
+
+    recalculateBtn.addEventListener('click', () => {
+        switchTab('input-section');
+    });
+
+    // --- Funções de Validação ---
     function validateForm() {
         let isValid = true;
         const inputs = form.querySelectorAll('input[required]');
@@ -1012,8 +1144,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return isValid;
     }
 
-    // --- FUNÇÕES DE BACKUP E RESTORE ---
-    
+    // --- Funções de Backup e Restore ---
     function backupData() {
         if (!validateForm()) {
             if (!confirm("Alguns campos estão vazios ou inválidos. Deseja fazer o backup mesmo assim?")) {
@@ -1036,9 +1167,40 @@ document.addEventListener('DOMContentLoaded', () => {
         fileRestoreInput.click();
     }
 
-    // --- FUNÇÃO DEMO DATA ---
-    
-    function setupDemoData() {
+    fileRestoreInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(e.target.result);
+                
+                // Popula os campos
+                for (const [key, value] of Object.entries(data)) {
+                    const input = document.getElementById(key);
+                    if (input) {
+                        input.value = value;
+                    }
+                }
+                
+                alert("Dados restaurados com sucesso! Clique em 'Calcular' para ver os resultados.");
+                validateForm(); // Remove erros visuais se houver
+                
+            } catch (err) {
+                console.error(err);
+                alert("Erro ao ler o arquivo de backup. Certifique-se de que é um arquivo JSON válido.");
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    // Event Listeners para Backup
+    btnBackup.addEventListener('click', backupData);
+    btnRestoreTrigger.addEventListener('click', triggerRestore);
+
+    // --- Função Demo Data (Exemplo 80k) ---
+    btnDemoData.addEventListener('click', () => {
         if(confirm('Deseja preencher o formulário com dados de exemplo (Faturamento ~R$ 80k)? Isso substituirá os dados atuais.')) {
             document.getElementById('faturamentoBruto').value = 80000;
             document.getElementById('custosVariaveis').value = 36000; // ~45%
@@ -1056,10 +1218,33 @@ document.addEventListener('DOMContentLoaded', () => {
             // Remove alertas visuais de erro se houver
             validateForm();
         }
-    }
+    });
 
-    // --- FUNÇÕES DE CÁLCULO E EXIBIÇÃO ---
-    
+
+    // --- Funções de Cálculo e Exibição ---
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        
+        // Verifica se a licença está válida
+        if (!checkLicenseExpiry()) {
+            alert('Sua licença expirou! Por favor, renove sua licença para continuar usando o aplicativo.');
+            document.getElementById('btn-license').click(); // Abre o modal de licença
+            return;
+        }
+        
+        if (validateForm()) {
+            const inputs = getFormInputs();
+            calculatedResults = calculateAllIndicators(inputs);
+            displayResults(calculatedResults);
+            switchTab('results-section');
+            
+            // Salva os dados após o cálculo
+            saveAutoData();
+        } else {
+            alert('Por favor, preencha todos os campos obrigatórios com valores válidos (positivos).');
+        }
+    });
+
     function getFormInputs() {
         const fields = ['faturamentoBruto', 'custosVariaveis', 'custosFixos', 'numeroVendas', 'impostos', 'ativosTotais', 'patrimonioLiquido', 'ativosCirculantes', 'passivosCirculantes', 'investimentoInicial'];
         const inputs = {};
@@ -1190,8 +1375,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- FUNÇÕES DO MODAL ---
-    
+    // --- Funções do Modal ---
     function openModal(data, showFullDetails = false) {
         modalTitle.textContent = data.name || data.dataset.title;
         modalMeaning.textContent = data.meaning || data.dataset.description;
@@ -1217,8 +1401,21 @@ document.addEventListener('DOMContentLoaded', () => {
         modalContainer.classList.remove('active');
     }
 
-    // --- FUNÇÕES DE EXPORTAÇÃO ---
-    
+    modalCloseBtn.addEventListener('click', closeModal);
+    modalContainer.addEventListener('click', (e) => {
+        if (e.target === modalContainer) {
+            closeModal();
+        }
+    });
+
+    helpButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            openModal(btn, false); 
+        });
+    });
+
+    // --- Funções de Exportação ---
     function exportToCSV() {
         if (calculatedResults.length === 0) {
             alert('Calcule os indicadores primeiro.');
@@ -1292,8 +1489,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.removeChild(textArea);
     }
     
-    // --- FUNCIONALIDADE: OPÇÕES DE IA ---
-    
+    // --- NOVA FUNCIONALIDADE: OPÇÕES DE IA (APENAS COPIAR) ---
     function openAIOptions() {
         if (calculatedResults.length === 0) {
             alert('Calcule os indicadores primeiro para gerar o prompt.');
@@ -1376,222 +1572,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         document.body.removeChild(textArea);
     }
-
-    // --- SISTEMA DE LICENÇA ---
     
-    // Inicializa verificação de licença
-    checkLicenseExpiry();
-    
-    // Event Listeners para Sistema de Licença
-    btnLicense.addEventListener('click', () => {
-        licenseModal.classList.add('active');
-        licenseInfo.classList.add('hidden');
-        licenseInput.value = '';
-    });
-    
-    btnGenerateCode.addEventListener('click', () => {
-        const randomCode = generateRandomCode();
-        licenseCodeInput.value = randomCode;
-        
-        // Informa o usuário sobre o formato
-        alert(`Código gerado: ${randomCode}\n\nEnvie este código no formato: xxxxx-yyy\nOnde xxxxx é o código calculado e yyy é o número de dias de crédito a liberar.\n\nExemplo: Para 30 dias, você receberá um código como: 139405-30`);
-    });
-    
-    btnActivateLicense.addEventListener('click', () => {
-        const licenseString = licenseInput.value.trim();
-        const generatedCode = parseInt(licenseCodeInput.value);
-        
-        if (!licenseString) {
-            alert('Por favor, insira o código de licença.');
-            return;
-        }
-        
-        if (!generatedCode || isNaN(generatedCode)) {
-            alert('Por favor, gere um código primeiro.');
-            return;
-        }
-        
-        // Valida o formato
-        const formatValidation = validateLicenseFormat(licenseString);
-        if (!formatValidation) {
-            alert('Formato inválido! Use o formato: xxxxx-yyy\nOnde xxxxx é o código e yyy são os dias.\nExemplo: 139405-30');
-            return;
-        }
-        
-        // Valida a licença
-        const validation = validateLicense(licenseString, generatedCode);
-        
-        if (!validation) {
-            alert('Licença inválida! Verifique se o código está correto.\n\nLembre-se: Envie o código no formato xxxxx-yyy\nOnde xxxxx é o resultado do cálculo e yyy são os dias.');
-            return;
-        }
-        
-        const { days } = validation;
-        const expiryDate = new Date();
-        expiryDate.setDate(expiryDate.getDate() + days);
-        
-        const licenseData = {
-            license: licenseString,
-            activationDate: new Date().toISOString(),
-            expiryDate: expiryDate.toISOString(),
-            days: days,
-            isTrial: false
-        };
-        
-        // Salva local
-        localStorage.setItem('pme_calculator_license', JSON.stringify(licenseData));
-        
-        // Salva na Nuvem (Sync)
-        if (auth && auth.currentUser) {
-            db.collection('users').doc(auth.currentUser.uid).set({
-                license: licenseData
-            }, { merge: true });
-        }
-        
-        // Mostra informações da licença
-        licenseInfo.classList.remove('hidden');
-        licenseDetails.textContent = `Licença ativada com sucesso para ${days} dias.`;
-        licenseExpiry.textContent = `Expira em: ${expiryDate.toLocaleDateString()}`;
-        
-        // Atualiza status no rodapé
-        checkLicenseExpiry();
-        
-        alert(`Licença ativada com sucesso! Seu acesso está liberado por ${days} dias.`);
-    });
-    
-    // Fechar modal de licença
-    document.querySelector('[data-modal="license"]').addEventListener('click', () => {
-        licenseModal.classList.remove('active');
-    });
-    
-    licenseModal.addEventListener('click', (e) => {
-        if (e.target === licenseModal) {
-            licenseModal.classList.remove('active');
-        }
-    });
-    
-    // --- SISTEMA DE DOAÇÕES ---
-    
-    donationButtons.forEach(button => {
-        button.addEventListener('click', () => {
-            const amount = button.getAttribute('data-amount');
-            const message = `Para doar R$ ${amount}, use a seguinte chave PIX:\n\n${PIX_KEY}\n\nCopiado para a área de transferência!`;
-            
-            // Copia a chave PIX para a área de transferência
-            navigator.clipboard.writeText(PIX_KEY).then(() => {
-                alert(message);
-            }).catch(err => {
-                alert(`Para doar R$ ${amount}, use a seguinte chave PIX:\n\n${PIX_KEY}`);
-            });
-        });
-    });
-    
-    btnDonationOther.addEventListener('click', () => {
-        const customAmount = prompt('Digite o valor da doação (ex: 25.00):', '25.00');
-        if (customAmount && !isNaN(parseFloat(customAmount))) {
-            const message = `Para doar R$ ${customAmount}, use a seguinte chave PIX:\n\n${PIX_KEY}\n\nCopiado para a área de transferência!`;
-            
-            navigator.clipboard.writeText(PIX_KEY).then(() => {
-                alert(message);
-            }).catch(err => {
-                alert(`Para doar R$ ${customAmount}, use a seguinte chave PIX:\n\n${PIX_KEY}`);
-            });
-        }
-    });
+    // --- Função Removida: Gerar via API (Solicitação do usuário) ---
 
-    // --- EVENT LISTENERS PRINCIPAIS ---
-    
-    // Navegação por abas
-    tabButtons.forEach(button => {
-        button.addEventListener('click', () => {
-            switchTab(button.dataset.tab);
-        });
-    });
-
-    recalculateBtn.addEventListener('click', () => {
-        switchTab('input-section');
-    });
-
-    // Modal
-    modalCloseBtn.addEventListener('click', closeModal);
-    modalContainer.addEventListener('click', (e) => {
-        if (e.target === modalContainer) {
-            closeModal();
-        }
-    });
-
-    helpButtons.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            openModal(btn, false); 
-        });
-    });
-
-    // Formulário
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        
-        // Verifica se a licença está válida
-        if (!checkLicenseExpiry()) {
-            alert('Sua licença expirou! Por favor, renove sua licença para continuar usando o aplicativo.');
-            document.getElementById('btn-license').click(); // Abre o modal de licença
-            return;
-        }
-        
-        if (validateForm()) {
-            const inputs = getFormInputs();
-            calculatedResults = calculateAllIndicators(inputs);
-            displayResults(calculatedResults);
-            switchTab('results-section');
-            
-            // Salva os dados após o cálculo
-            saveAutoData();
-        } else {
-            alert('Por favor, preencha todos os campos obrigatórios com valores válidos (positivos).');
-        }
-    });
-
-    // Backup
-    btnBackup.addEventListener('click', backupData);
-    btnRestoreTrigger.addEventListener('click', triggerRestore);
-
-    // Restore
-    fileRestoreInput.addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const data = JSON.parse(e.target.result);
-                
-                // Popula os campos
-                for (const [key, value] of Object.entries(data)) {
-                    const input = document.getElementById(key);
-                    if (input) {
-                        input.value = value;
-                    }
-                }
-                
-                alert("Dados restaurados com sucesso! Clique em 'Calcular' para ver os resultados.");
-                validateForm(); // Remove erros visuais se houver
-                
-            } catch (err) {
-                console.error(err);
-                alert("Erro ao ler o arquivo de backup. Certifique-se de que é um arquivo JSON válido.");
-            }
-        };
-        reader.readAsText(file);
-    });
-
-    // Demo Data
-    btnDemoData.addEventListener('click', setupDemoData);
-
-    // Exportação
     exportCsvBtn.addEventListener('click', exportToCSV);
     copyClipboardBtn.addEventListener('click', copyToClipboard);
     
-    // IA
+    // Event Listeners IA
     btnAiAnalysis.addEventListener('click', openAIOptions);
     
     // Fechar modal de IA
@@ -1599,7 +1586,7 @@ document.addEventListener('DOMContentLoaded', () => {
         aiOptionsModal.classList.remove('active');
     });
     
-    // Botão Copiar no Modal
+    // Botão Copiar no Modal (Pelo Card ou Botão interno)
     btnAiCopy.addEventListener('click', () => {
         copyPromptToClipboard();
     });

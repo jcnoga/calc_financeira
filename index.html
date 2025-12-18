@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calculadora Financeira para PMEs</title>
     
-    <!-- Firebase SDKs -->
+    <!-- FIREBASE SDKs (Atualizado com Firestore) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    
-    <!-- CSS externo -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script> <!-- Adicionado Firestore -->
+
+    <!-- Link para o CSS Externo -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -25,10 +25,10 @@
                     🎲 Gerar dados de exemplo
                 </button>
             </div>
-            <!-- Controles de Usuário -->
+            <!-- Controles de Usuário (Visível apenas se logado) -->
             <div id="user-area" class="user-controls hidden">
                 <span id="user-welcome" class="welcome-msg">Olá, Usuário</span>
-                <!-- Botão de Licença -->
+                <!-- Botão de Licença (Novo) -->
                 <div class="license-controls">
                     <button id="btn-license" class="btn-license">🔑 Licença</button>
                 </div>
@@ -36,7 +36,9 @@
             </div>
         </header>
 
-        <!-- SISTEMA DE LOGIN -->
+        <!-- ======================= -->
+        <!--   SISTEMA DE LOGIN      -->
+        <!-- ======================= -->
         <div id="auth-section">
             
             <!-- Tela de Login -->
@@ -121,7 +123,9 @@
 
             <main class="app-content">
 
-                <!-- SEÇÃO DE ENTRADA -->
+                <!-- ======================= -->
+                <!--   SEÇÃO DE ENTRADA      -->
+                <!-- ======================= -->
                 <section id="input-section" class="app-section active">
                     <form id="financial-form">
                         
@@ -248,10 +252,11 @@
                                 <!-- Botões de Backup e Restore -->
                                 <button type="button" id="btn-backup" class="btn btn-secondary">⬇ Backup (JSON)</button>
                                 <button type="button" id="btn-restore-trigger" class="btn btn-secondary">📂 Restaurar</button>
+                                <!-- (Botão Demo MOVIDO para o Header) -->
                                 <input type="file" id="file-restore" accept=".json" style="display: none;">
                             </div>
                             
-                            <!-- Botão Calcular -->
+                            <!-- Botão Calcular (escondido inicialmente) -->
                             <button type="submit" class="btn btn-primary btn-calculate-hidden" id="btn-calculate">Calcular 25 Indicadores 🚀</button>
                         </div>
                         
@@ -263,7 +268,9 @@
                     </form>
                 </section>
 
-                <!-- SEÇÃO DE RESULTADOS -->
+                <!-- ======================= -->
+                <!--   SEÇÃO DE RESULTADOS   -->
+                <!-- ======================= -->
                 <section id="results-section" class="app-section">
                     <div class="results-header">
                         <h2>Seu Diagnóstico Financeiro</h2>
@@ -271,7 +278,7 @@
                             <button id="btn-recalculate">🔄 Recalcular</button>
                             <button id="btn-export-csv">💾 Exportar CSV</button>
                             <button id="btn-copy-clipboard">📋 Copiar Resumo</button>
-                            <!-- BOTÃO DE IA -->
+                            <!-- NOVO BOTÃO DE IA -->
                             <button id="btn-ai-analysis" class="btn-ai">🤖 Avaliação com IA</button>
                         </div>
                     </div>
@@ -283,7 +290,9 @@
 
             </main>
             
-            <!-- RODAPÉ -->
+            <!-- ======================= -->
+            <!--   RODAPÉ ADICIONADO     -->
+            <!-- ======================= -->
             <footer class="app-footer">
                 <div class="footer-links">
                     <a href="https://www.websitelog.com.br" target="_blank">www.websitelog.com.br</a>
@@ -299,7 +308,9 @@
         </div>
     </div>
 
-    <!-- MODAL DE DETALHES -->
+    <!-- ======================= -->
+    <!--   MODAL DE DETALHES     -->
+    <!-- ======================= -->
     <div id="modal-container" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -319,7 +330,9 @@
         </div>
     </div>
     
-    <!-- MODAL DE LICENÇA -->
+    <!-- ======================= -->
+    <!--   MODAL DE LICENÇA      -->
+    <!-- ======================= -->
     <div id="license-modal" class="modal-overlay">
         <div class="modal-content license-modal">
             <div class="modal-header">
@@ -353,7 +366,9 @@
         </div>
     </div>
     
-    <!-- MODAL DE OPÇÕES DA IA -->
+    <!-- ======================= -->
+    <!--   MODAL DE OPÇÕES DA IA -->
+    <!-- ======================= -->
     <div id="ai-options-modal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -374,7 +389,8 @@
         </div>
     </div>
 
-    <!-- JavaScript externo -->
-    <script src="app.js"></script>
+    <!-- Link para o JavaScript Externo -->
+    <script src="script.js"></script>
 </body>
 </html>
+```
