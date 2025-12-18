@@ -1,6 +1,4 @@
 // CONFIGURAÇÃO FIREBASE (Atualizado com Firestore)
-console.log("SCRIPT CARREGADO!");
-alert("O JavaScript foi carregado com sucesso.");
 const firebaseConfig = {
   apiKey: "AIzaSyDWwDLl34BLd1mYLSniJ8ucDTeaj4IX_2s",
   authDomain: "calc-financeira.firebaseapp.com",
