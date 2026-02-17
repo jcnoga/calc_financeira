@@ -10,6 +10,9 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script> <!-- Adicionado Firestore -->
 
+    <!-- *** NOVO: BIBLIOTECA jspdf PARA GERAR PDF *** -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
     <!-- Link para o CSS Externo -->
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -247,6 +250,75 @@
                             </div>
                         </details>
                         
+                        <details>
+                            <summary>Análise Estratégica (Marketing e Vendas)</summary>
+                            <div class="form-fields-grid">
+                                <div class="form-group">
+                                    <div class="label-wrapper">
+                                        <label for="usaRedesSociais">Utiliza redes sociais?</label>
+                                        <button type="button" class="btn-help" data-title="Presença em Redes Sociais" data-description="Avalia o principal canal de aquisição e relacionamento para muitas PMEs. A ausência ou mau uso impacta diretamente o potencial de faturamento."></button>
+                                    </div>
+                                    <input type="text" id="usaRedesSociais" placeholder="Ex: Sim, Instagram e Facebook">
+                                </div>
+                                <div class="form-group">
+                                    <div class="label-wrapper">
+                                        <label for="temWhatsBusiness">Possui WhatsApp Business estruturado?</label>
+                                        <button type="button" class="btn-help" data-title="WhatsApp Business" data-description="Ferramenta crucial para conversão e atendimento. Um processo desestruturado pode levar à perda de vendas e impactar a receita."></button>
+                                    </div>
+                                    <input type="text" id="temWhatsBusiness" placeholder="Ex: Sim, com catálogo e respostas rápidas">
+                                </div>
+                                <div class="form-group">
+                                    <div class="label-wrapper">
+                                        <label for="temLandingPage">Possui landing page?</label>
+                                        <button type="button" class="btn-help" data-title="Landing Page" data-description="Páginas focadas em conversão são essenciais para campanhas de marketing (tráfego pago), otimizando o investimento e aumentando o número de vendas."></button>
+                                    </div>
+                                    <input type="text" id="temLandingPage" placeholder="Ex: Sim, para nosso produto principal">
+                                </div>
+                                <div class="form-group">
+                                    <div class="label-wrapper">
+                                        <label for="temSite">Possui site institucional?</label>
+                                        <button type="button" class="btn-help" data-title="Site Institucional" data-description="Aumenta a credibilidade e serve como um ponto central para a presença digital, impactando a percepção de valor e, consequentemente, o ticket médio."></button>
+                                    </div>
+                                    <input type="text" id="temSite" placeholder="Ex: Sim, mas está desatualizado">
+                                </div>
+                                <div class="form-group">
+                                    <div class="label-wrapper">
+                                        <label for="temLojaVirtual">Possui loja virtual própria (e-commerce)?</label>
+                                        <button type="button" class="btn-help" data-title="Loja Virtual Própria" data-description="Um canal de venda direto que permite maior controle sobre a margem de lucro, ao contrário de marketplaces que cobram altas comissões."></button>
+                                    </div>
+                                    <input type="text" id="temLojaVirtual" placeholder="Ex: Não">
+                                </div>
+                                <div class="form-group">
+                                    <div class="label-wrapper">
+                                        <label for="vendeMarketplace">Vende em marketplaces?</label>
+                                        <button type="button" class="btn-help" data-title="Venda em Marketplaces" data-description="Aumenta o volume de vendas, mas geralmente achata a margem de contribuição devido às taxas. Importante para a estratégia de faturamento."></button>
+                                    </div>
+                                    <input type="text" id="vendeMarketplace" placeholder="Ex: Sim, Mercado Livre e Shopee">
+                                </div>
+                                <div class="form-group">
+                                    <div class="label-wrapper">
+                                        <label for="fazTrafegoPago">Realiza tráfego pago?</label>
+                                        <button type="button" class="btn-help" data-title="Tráfego Pago" data-description="Investimento direto para aquisição de clientes. A eficiência dessa estratégia (Custo por Aquisição vs. Ticket Médio) é vital para a lucratividade."></button>
+                                    </div>
+                                    <input type="text" id="fazTrafegoPago" placeholder="Ex: Sim, Google Ads">
+                                </div>
+                                <div class="form-group">
+                                    <div class="label-wrapper">
+                                        <label for="temRetencao">Possui estratégia de retenção e recompra?</label>
+                                        <button type="button" class="btn-help" data-title="Estratégia de Retenção" data-description="Vender para um cliente existente é mais barato do que adquirir um novo. A falta de foco em recompra aumenta os custos e diminui o lucro líquido."></button>
+                                    </div>
+                                    <input type="text" id="temRetencao" placeholder="Ex: Sim, usamos e-mail marketing">
+                                </div>
+                                <div class="form-group">
+                                    <div class="label-wrapper">
+                                        <label for="usaCRM">Trabalha com CRM ou automação comercial?</label>
+                                        <button type="button" class="btn-help" data-title="Uso de CRM" data-description="Ferramentas de CRM aumentam a eficiência da equipe de vendas, ajudando a gerenciar o funil e a não perder oportunidades, impactando diretamente o faturamento."></button>
+                                    </div>
+                                    <input type="text" id="usaCRM" placeholder="Ex: Não, controlamos em planilha">
+                                </div>
+                            </div>
+                        </details>
+                        
                         <div class="form-actions">
                             <div class="backup-controls">
                                 <!-- Botões de Backup e Restore -->
@@ -277,7 +349,8 @@
                         <div class="results-actions">
                             <button id="btn-recalculate">🔄 Recalcular</button>
                             <button id="btn-export-csv">💾 Exportar CSV</button>
-                            <button id="btn-copy-clipboard">📋 Copiar Resumo</button>
+                            <!-- *** BOTÃO ATUALIZADO *** -->
+                            <button id="btn-export-pdf">📄 Baixar PDF</button>
                             <!-- NOVO BOTÃO DE IA -->
                             <button id="btn-ai-analysis" class="btn-ai">🤖 Avaliação com IA</button>
                         </div>
@@ -393,4 +466,3 @@
     <script src="script.js"></script>
 </body>
 </html>
-```

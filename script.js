@@ -745,7 +745,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const recalculateBtn = document.getElementById('btn-recalculate');
     const exportCsvBtn = document.getElementById('btn-export-csv');
-    const copyClipboardBtn = document.getElementById('btn-copy-clipboard');
+    
+    // *** SELETOR ATUALIZADO ***
+    const exportPdfBtn = document.getElementById('btn-export-pdf');
     const helpButtons = document.querySelectorAll('.btn-help');
     
     // AI Analysis Elements
@@ -1246,12 +1248,36 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function getFormInputs() {
+        // Esta função pega apenas os campos numéricos para os cálculos.
         const fields = ['faturamentoBruto', 'custosVariaveis', 'custosFixos', 'numeroVendas', 'impostos', 'ativosTotais', 'patrimonioLiquido', 'ativosCirculantes', 'passivosCirculantes', 'investimentoInicial'];
         const inputs = {};
         fields.forEach(id => {
             const val = parseFloat(document.getElementById(id).value);
             inputs[id] = isNaN(val) ? 0 : val;
         });
+        return inputs;
+    }
+    
+    function getStrategicInputs() {
+        const strategicFields = {
+            'usaRedesSociais': 'Utiliza redes sociais?',
+            'temWhatsBusiness': 'Possui WhatsApp Business estruturado?',
+            'temLandingPage': 'Possui landing page?',
+            'temSite': 'Possui site institucional?',
+            'temLojaVirtual': 'Possui loja virtual própria (e-commerce)?',
+            'vendeMarketplace': 'Vende em marketplaces?',
+            'fazTrafegoPago': 'Realiza tráfego pago?',
+            'temRetencao': 'Possui estratégia de retenção e recompra?',
+            'usaCRM': 'Trabalha com CRM ou automação comercial?'
+        };
+
+        const inputs = {};
+        for (const id in strategicFields) {
+            const inputElement = document.getElementById(id);
+            if (inputElement) {
+                inputs[strategicFields[id]] = inputElement.value.trim() || 'Não informado';
+            }
+        }
         return inputs;
     }
 
@@ -1434,7 +1460,6 @@ document.addEventListener('DOMContentLoaded', () => {
             csvContent += row + "\r\n";
         });
         
-        // Correção para forçar download
         const link = document.createElement("a");
         link.setAttribute("href", csvContent);
         link.setAttribute("download", "diagnostico_financeiro.csv");
@@ -1442,51 +1467,83 @@ document.addEventListener('DOMContentLoaded', () => {
         link.click();
         document.body.removeChild(link);
     }
-
-    function copyToClipboard() {
+    
+    // *** NOVA FUNÇÃO: EXPORTAR PARA PDF ***
+    function exportToPDF() {
         if (calculatedResults.length === 0) {
             alert('Calcule os indicadores primeiro.');
             return;
         }
         
-        let text = "Resumo do Diagnóstico Financeiro\r\n";
-        text += "===================================\r\n\r\n";
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        let yPosition = 20;
+        const lineHeight = 7;
+        const leftMargin = 15;
+        const pageHeight = doc.internal.pageSize.height;
+
+        // Título do Documento
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(18);
+        doc.text("Diagnóstico Financeiro Completo", leftMargin, yPosition);
+        yPosition += lineHeight * 2;
 
         const categories = calculatedResults.reduce((acc, result) => {
             (acc[result.category] = acc[result.category] || []).push(result);
             return acc;
         }, {});
-
-        for (const categoryName in categories) {
-            text += `--- ${categoryName.toUpperCase()} ---\r\n`;
-            categories[categoryName].forEach(item => {
-                text += `${item.name}: ${item.formattedValue}\r\n`;
-            });
-            text += "\r\n";
-        }
         
-        const textArea = document.createElement("textarea");
-        textArea.value = text;
-        textArea.style.position = "fixed";
-        textArea.style.top = "-9999px";
-        textArea.style.left = "-9999px";
-        document.body.appendChild(textArea);
-        
-        textArea.focus();
-        textArea.select();
-        
-        try {
-            const successful = document.execCommand('copy');
-            if (successful) {
-                alert('Resumo copiado para a área de transferência!');
-            } else {
-                alert('Não foi possível copiar. Tente manualmente.');
+        // Função para adicionar nova página se necessário
+        const checkPageBreak = () => {
+            if (yPosition > pageHeight - 20) { // 20mm de margem inferior
+                doc.addPage();
+                yPosition = 20;
             }
-        } catch (err) {
-            alert('Erro ao copiar. Tente manualmente.');
+        };
+
+        // Adiciona Indicadores Financeiros
+        for (const categoryName in categories) {
+            checkPageBreak();
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(14);
+            doc.text(categoryName.toUpperCase(), leftMargin, yPosition);
+            yPosition += lineHeight * 1.5;
+
+            categories[categoryName].forEach(item => {
+                checkPageBreak();
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(10);
+                const text = `${item.name}: ${item.formattedValue}`;
+                doc.text(text, leftMargin, yPosition);
+                yPosition += lineHeight;
+            });
+            yPosition += lineHeight; // Espaço extra entre categorias
         }
         
-        document.body.removeChild(textArea);
+        // Adiciona Análise Estratégica
+        checkPageBreak();
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text("ANÁLISE ESTRATÉGICA (MARKETING E VENDAS)", leftMargin, yPosition);
+        yPosition += lineHeight * 1.5;
+        
+        const strategicInputs = getStrategicInputs();
+        for (const [question, answer] of Object.entries(strategicInputs)) {
+            checkPageBreak();
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            doc.text(question, leftMargin, yPosition);
+            yPosition += lineHeight;
+            
+            checkPageBreak();
+            doc.setFont("helvetica", "normal");
+            doc.text(`- ${answer}`, leftMargin + 5, yPosition); // Resposta indentada
+            yPosition += lineHeight * 1.5; // Espaço extra entre perguntas
+        }
+        
+        // Salva o PDF
+        doc.save("diagnostico_financeiro.pdf");
     }
     
     // --- NOVA FUNCIONALIDADE: OPÇÕES DE IA (APENAS COPIAR) ---
@@ -1495,18 +1552,15 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Calcule os indicadores primeiro para gerar o prompt.');
             return;
         }
-        
-        // Abre o modal de opções
         aiOptionsModal.classList.add('active');
     }
     
     function buildPromptText() {
         const inputs = getFormInputs();
         
-        // Prompt estruturado
         let prompt = "Atue como um Consultor Financeiro Sênior (CFO) especializado em PMEs. ";
-        prompt += "Abaixo estão os dados operacionais e os indicadores calculados de uma empresa. ";
-        prompt += "Analise-os profundamente e forneça um diagnóstico.\n\n";
+        prompt += "Abaixo estão os dados operacionais, os indicadores calculados e uma análise qualitativa da estratégia de marketing de uma empresa. ";
+        prompt += "Analise todos os pontos de forma integrada e forneça um diagnóstico completo.\n\n";
         
         prompt += "=== 1. DADOS DE ENTRADA (INPUTS) ===\n";
         prompt += `Faturamento Bruto: R$ ${inputs.faturamentoBruto}\n`;
@@ -1515,7 +1569,6 @@ document.addEventListener('DOMContentLoaded', () => {
         prompt += `Número de Vendas: ${inputs.numeroVendas}\n`;
         prompt += `Impostos/Juros: R$ ${inputs.impostos}\n`;
         prompt += `Ativos Totais: R$ ${inputs.ativosTotais}\n`;
-        // Passivos totais estimado com base no PL
         prompt += `Passivos Totais: R$ ${inputs.passivosCirculantes + (inputs.ativosTotais - inputs.patrimonioLiquido - inputs.passivosCirculantes)}\n`; 
         prompt += `Patrimônio Líquido: R$ ${inputs.patrimonioLiquido}\n`;
         prompt += `Investimento Inicial: R$ ${inputs.investimentoInicial}\n\n`;
@@ -1534,17 +1587,23 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
-        prompt += "\n=== 3. O QUE EU PRECISO ===\n";
-        prompt += "Baseado nos números acima, forneça:\n";
+        prompt += "\n=== 3. ANÁLISE ESTRATÉGICA (Marketing & Vendas) ===\n";
+        const strategicInputs = getStrategicInputs();
+        for (const [question, answer] of Object.entries(strategicInputs)) {
+            prompt += `${question}: ${answer}\n`;
+        }
+        
+        prompt += "\n=== 4. O QUE EU PRECISO ===\n";
+        prompt += "Baseado em TODOS os números e na análise estratégica acima, forneça:\n";
         prompt += "1. **Diagnóstico Geral**: Qual a saúde real da empresa hoje? (Excelente, Boa, Alerta ou Crítica?)\n";
         prompt += "2. **Análise de Lucratividade**: A precificação e margens estão corretas? Onde estou perdendo dinheiro?\n";
         prompt += "3. **Análise de Estrutura**: Meus custos fixos estão altos demais para o meu faturamento?\n";
-        prompt += "4. **Plano de Ação Imediato**: Liste 3 ações práticas e numéricas para melhorar o Lucro Líquido nos próximos 30 dias.\n";
-        
+        prompt += "4. **Análise de Canais e Marketing**: Quais são as maiores oportunidades e gargalos com base nas respostas estratégicas? Como a estratégia de marketing atual impacta os resultados financeiros?\n";
+        prompt += "5. **Plano de Ação Imediato**: Liste de 3 a 5 ações práticas e numéricas para melhorar o Lucro Líquido nos próximos 30-60 dias, conectando ações comerciais (marketing/vendas) com os resultados financeiros esperados.\n";
+
         return prompt;
     }
     
-    // Função 1: Copiar Prompt
     function copyPromptToClipboard() {
         const prompt = buildPromptText();
         
@@ -1561,7 +1620,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const successful = document.execCommand('copy');
             if (successful) {
                 alert('Prompt copiado! Cole no seu assistente de IA preferido.');
-                // Fecha o modal após copiar
                 aiOptionsModal.classList.remove('active');
             } else {
                 alert('Erro ao copiar.');
@@ -1573,22 +1631,19 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.removeChild(textArea);
     }
     
-    // --- Função Removida: Gerar via API (Solicitação do usuário) ---
-
     exportCsvBtn.addEventListener('click', exportToCSV);
-    copyClipboardBtn.addEventListener('click', copyToClipboard);
+    
+    // *** EVENT LISTENER ATUALIZADO ***
+    exportPdfBtn.addEventListener('click', exportToPDF);
     
     // Event Listeners IA
     btnAiAnalysis.addEventListener('click', openAIOptions);
     
-    // Fechar modal de IA
     document.querySelector('[data-modal="ai-options"]').addEventListener('click', () => {
         aiOptionsModal.classList.remove('active');
     });
     
-    // Botão Copiar no Modal (Pelo Card ou Botão interno)
     btnAiCopy.addEventListener('click', () => {
         copyPromptToClipboard();
     });
-
 });
