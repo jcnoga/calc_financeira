@@ -390,6 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
+
         const { days } = validation;
         const expiryDate = new Date();
         expiryDate.setDate(expiryDate.getDate() + days);
@@ -402,14 +403,6 @@ document.addEventListener('DOMContentLoaded', () => {
             isTrial: false
         };
 		
-		
-            btnGenerateCode.addEventListener('click', () => {
-();        const randomCode = generateRandomCode
-        licenseCodeInput.value = randomCode;
-
-
-
-
 
         // Salva local
         localStorage.setItem('pme_calculator_license', JSON.stringify(licenseData));
@@ -420,6 +413,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 license: licenseData
             }, { merge: true });
         }
+		
         
         // Mostra informações da licença
         licenseInfo.classList.remove('hidden');
