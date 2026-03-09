@@ -271,7 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return Math.floor(100 + Math.random() * 900); // Gera número entre 100 e 999
     }
     
-    function r(code, days) {
+    function calculatePassword(code, days) {
         const calculation = (code + LICENSE_CONSTANTS.ADD_VALUE) * LICENSE_CONSTANTS.MULTIPLIER + LICENSE_CONSTANTS.BASE_NUMBER;
         return `${calculation}-${days}`;
     }
@@ -354,7 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     btnGenerateCode.addEventListener('click', () => {
-();        const randomCode = generateRandomCode
+        const randomCode = generateRandomCode();
         licenseCodeInput.value = randomCode;
         
         // Informa o usuário sobre o formato
@@ -390,7 +390,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-
         const { days } = validation;
         const expiryDate = new Date();
         expiryDate.setDate(expiryDate.getDate() + days);
@@ -402,8 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
             days: days,
             isTrial: false
         };
-		
-
+        
         // Salva local
         localStorage.setItem('pme_calculator_license', JSON.stringify(licenseData));
         
@@ -413,7 +411,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 license: licenseData
             }, { merge: true });
         }
-		
         
         // Mostra informações da licença
         licenseInfo.classList.remove('hidden');
